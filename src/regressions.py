@@ -233,7 +233,7 @@ def ablationTesting(model, X_train, y_train):
 def main():
 
 	print "Reading Data"
-	X_train, X_test, y_train, y_test = readData('verifiabilityNumFeatures')
+	X_train, X_test, y_train, y_test = readData('data/verifiabilityNumFeatures')
 	print
 	print
 	
