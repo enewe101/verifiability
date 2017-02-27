@@ -6,6 +6,12 @@
 Quote verifiability, part of the Validators Project
 ===================================================
 
+.. NOTE::
+
+    This documentation isn't displaying correctly on Gitlab.  Read it 
+    `here <http://cgi.cs.mcgill.ca/~enewel3/temp/verifiability/docs/html/>`
+    instead.
+
 The ``HarmonicLogistic`` model
 ------------------------------
 
