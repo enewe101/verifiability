@@ -17,7 +17,7 @@ import pickle
 
 
 
-myCueWordFile = open('typed_cue_words.txt', 'r')
+myCueWordFile = open('data/typed_cue_words.txt', 'r')
 allLines = myCueWordFile.readlines()
 verbCategories = {'Presumed True': [], 'Say': [], 'Belief': [], 'Intend': []}
 presumed = allLines[2]
@@ -376,7 +376,7 @@ def execute(data):
 		
 	
 
-	pickle.dump(data, open('featureDict', 'wb'))
+	pickle.dump(data, open('data/featureDict', 'wb'))
 	
 	
 	#data = pickle.load(open('featureDict', 'rb'))
@@ -385,7 +385,7 @@ def execute(data):
 
 	vectors = vectorize(data)
 
-	pickle.dump(vectors, open('verifiabilityNumFeatures', 'wb'))
+	pickle.dump(vectors, open('data/verifiabilityNumFeatures', 'wb'))
 
 
 
@@ -407,7 +407,7 @@ def openFile(pairwiseFile):
 
 
 def main():
-	pairwiseFile = "/home/ndg/project/shared_datasets/validators/100-pairwise-scores.tsv"
+	pairwiseFile = "data/typed_cue_words.txt"
 	data = openFile(pairwiseFile)
 	execute(data)
 
