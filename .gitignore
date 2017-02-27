@@ -5,3 +5,5 @@
 data
 *~
 ~*
+test-save-load.npz
+build

@@ -1,7 +1,13 @@
+import shutil
+import os
 import harmonic_logistic as hl
 import numpy as np
 from theano import function, shared, tensor as T
 from unittest import TestCase, main
+
+def remove_if_exists(path):
+	if os.path.exists(path):
+		os.remove(path)
 
 
 class TestLogistic(TestCase):
@@ -225,6 +231,48 @@ class TestHarmonicLogisticRegressor(TestCase):
 				regressor_to_train.params[1].get_value()
 			).all()
 		)
+
+
+	def test_save_load(self):
+		
+		test_save_load_path = 'test-save-load.npz'
+
+		# Remove the saved file that may be left over from a previous run
+		remove_if_exists(test_save_load_path)
+
+		# Build a test model to test out the saving and loading.  Set the
+		# model's parameters to something so we can verify that saving and
+		# loading restores the params.
+		regressor = hl.HarmonicLogistic((4,3))
+		regressor.params[0].set_value(
+			np.array([[-1,0,1,2]], dtype='float64'))
+		regressor.params[1].set_value(
+			np.array([[-1,0,1]], dtype='float64'))
+
+		# Save the model
+		regressor.save(test_save_load_path)
+
+		# Load the model using the load function on an existing regressor
+		# Note that the lengths of this regressor need not match the lengths of
+		# the loaded model, they will be determined from the model.
+		loaded_regressor = hl.HarmonicLogistic(lengths=[1])
+		loaded_regressor.load(test_save_load_path)
+
+		# Check that the loaded regressor's parameters are identical to the
+		# original regressor's parameters.
+		self.assertEqual(len(regressor.params), len(loaded_regressor.params))
+		for p1, p2 in zip(loaded_regressor.params, regressor.params):
+			self.assertTrue(np.array_equal(p1.get_value(), p2.get_value()))
+
+		# Now load the model using the load function in the constructor
+		loaded_regressor2 = hl.HarmonicLogistic(load=test_save_load_path)
+
+		# Check that the loaded regressor's parameters are identical to the
+		# original regressor's parameters.
+		self.assertEqual(len(regressor.params), len(loaded_regressor2.params))
+		for p1, p2 in zip(loaded_regressor2.params, regressor.params):
+			self.assertTrue(np.array_equal(p1.get_value(), p2.get_value()))
+
 
 
 if __name__ == '__main__':
