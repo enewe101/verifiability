@@ -65,6 +65,7 @@ def getAttr(attr):
 def featureExtract(attribution, article):
 
 	featureDict = {}
+	featureDict['attribution'] = attribution['id']
 
 	content = attribution['content']
 	source = attribution['source']
@@ -265,11 +266,20 @@ def vectorize(dataDict):
 	amodVocab = sorted(list(set(amodVocab)))
 	detsVocab = sorted(list(set(detsVocab)))
 
-	headers = []
 	for attr in ids:
 		headers = []
+		sourceFeats = 0
+		sourceFeatsList = []
+		cueFeats = 0
+		cueFeatsList = []
+		contentFeats = 0
+		contentFeatsList = []
+
+
 		thisVector = []
 		features = dataDict[attr]
+
+		### SOURCE FEATURES ######
 		headers.append('sourceEntityPresence')
 		if features['sourceEntityPresence'] == True:
 			thisVector.append(1)
@@ -294,14 +304,6 @@ def vectorize(dataDict):
 		else:
 			thisVector.append(0)
 
-		headers.append('typeQuote')
-		if features['quoteType'] == 'direct':
-			thisVector.append(0)
-		elif features['quoteType'] == 'mixed':
-			thisVector.append(1)
-		else:
-			thisVector.append(2)
-
 		headers.append('pronounSource')
 		if features['pronounPresence'] == True:
 			thisVector.append(1)
@@ -314,16 +316,13 @@ def vectorize(dataDict):
 		else:
 			thisVector.append(0)
 
-		headers = headers + ['presumedVerb', 'sayVerb', 'beliefVerb', 'intendVerb']
-		thisVector = thisVector + features['verbType']
-
 		headers = headers + [('dets_' + i) for i in detsVocab]
 		thisVector = thisVector + createListVectors(features['dets'], detsVocab)
 		
 		headers = headers + [('amod_' + i) for i in amodVocab]
 		thisVector = thisVector + createListVectors(features['amods'], amodVocab)
 		
-		headers = headers + [('sourceLemmaVocab_' + i) for i in sourceLemmaVocab]		
+		headers = headers + [('sourceLemmaVocab_' + i) for i in sourceLemmaVocab]	
 		thisVector = thisVector + createListVectors(features['sourceLemma'], sourceLemmaVocab)
 		
 		headers = headers + [('typeEntities_' + i) for i in typeEntitiesVocab]		
@@ -331,21 +330,52 @@ def vectorize(dataDict):
 		
 		headers = headers + [('weasel_' + i) for i in weaselWordsVocab]		
 		thisVector = thisVector + createListVectors(features['weaselWords'], weaselWordsVocab)
-		
-		headers = headers + [('cueBOW_' + i) for i in cueVocab]		
-		thisVector = thisVector + createListVectors(features['cueBOW'], cueVocab)
-		
-		headers = headers + [('sourceBOW_' + i) for i in sourceVocab]		
+
+		headers = headers + [('sourceBOW_' + i) for i in sourceVocab]	
 		thisVector = thisVector + createListVectors(features['sourceWords'], sourceVocab)
+
+		sourceFeats = len(headers)
+
+		#### CUE FEATURES ######
+		headers = headers + ['presumedVerb', 'sayVerb', 'beliefVerb', 'intendVerb']
+		thisVector = thisVector + features['verbType']
+
+		
+		headers = headers + [('cueBOW_' + i) for i in cueVocab]	
+		thisVector = thisVector + createListVectors(features['cueBOW'], cueVocab)
+
+		cueFeats = 4 + len(cueVocab)
+
+		##### CONTENT FEATURES ####
+		headers.append('typeQuote')
+		if features['quoteType'] == 'direct':
+			thisVector.append(0)
+		elif features['quoteType'] == 'mixed':
+			thisVector.append(1)
+		else:
+			thisVector.append(2)
 		
 		headers = headers + [('contentBOW_' + i) for i in contentVocab]		
 		thisVector = thisVector + createListVectors(features['contentWords'], contentVocab)
 
-		thisVector = features['label'] + thisVector
+		contentFeats = 1 + len(contentVocab)
+
+		print features
+		thisVector = [features['attribution']] + features['label'] + thisVector
+		print thisVector
+
 		headers = ['label'] + headers
 		featVector.append(thisVector)
 
 	print headers
+	print len(headers)
+
+	print 'Source number of features: ' + str(sourceFeats)
+	print 'Cue number of features: ' + str(cueFeats)
+	print 'Content Number of features: ' + str(contentFeats)
+
+
+
 	return featVector
 
 def createListVectors(thisList, compareList):
@@ -361,6 +391,7 @@ def createListVectors(thisList, compareList):
 	return zeroes
 
 def execute(data):
+	'''
 	attr_ids = data.keys()
 	i = 0
 	
@@ -371,17 +402,14 @@ def execute(data):
 		label = data[attr]
 		featureDict['label'] = label
 		data[attr] = featureDict
+		print featureDict
 		i += 1
-
-		
 	
 
 	pickle.dump(data, open('data/featureDict', 'wb'))
+	'''
 	
-	
-	#data = pickle.load(open('featureDict', 'rb'))
-
-
+	data = pickle.load(open('data/featureDict', 'rb'))
 
 	vectors = vectorize(data)
 
@@ -407,7 +435,7 @@ def openFile(pairwiseFile):
 
 
 def main():
-	pairwiseFile = "data/typed_cue_words.txt"
+	pairwiseFile = "data/100-pairwise-scores.tsv"
 	data = openFile(pairwiseFile)
 	execute(data)
 
