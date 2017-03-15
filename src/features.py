@@ -5,6 +5,7 @@ from nltk.corpus import stopwords
 import string
 import pickle
 from string import digits
+import pandas as pd
 
 stopwords = [ u'this', u'that', u'these', u'those', u'am', u'is', u'are', u'was', u'were', u'be', u'been', u'being', u'have', u'has', u'had', u'having', u'do', u'does', u'did', u'doing', u'a', u'an', u'the', u'and', u'but', u'if', u'or', u'because', u'as', u'until', u'while', u'of', u'at', u'by', u'for', u'with', u'about', u'against', u'between', u'into', u'through', u'during', u'before', u'after', u'above', u'below', u'to', u'from', u'up', u'down', u'in', u'out', u'on', u'off', u'over', u'under', u'again', u'further', u'then', u'once', u'here', u'there', u'when', u'where', u'why', u'how', u'all', u'any', u'both', u'each', u'few', u'more', u'most', u'other', u'some', u'such', u'no', u'nor', u'not', u'own', u'same', u'so', u'than', u'too', u'very', u's', u't', u'can', u'will', u'just', u'don', u'should', u'now', u'd', u'll', u'm', u'o', u're', u've', u'y', u'ain', u'aren', u'couldn', u'didn', u'doesn', u'hadn', u'hasn', u'haven', u'isn', u'ma', u'mightn', u'mustn', u'needn', u'shan', u'shouldn', u'wasn', u'weren', u'won', u'wouldn']
 #stopwords = ['and', 'the', '']
@@ -46,10 +47,19 @@ def getAttr(attr):
 	print attr
 	filename = attr[0:8]
 	folder = attr[4:6]
+	top_folder = ''
 
-	parcFilePath = "/home/ndg/dataset/parc3/train/" + folder + '/' + filename + '.xml'
-	corenlpPath =  "/home/ndg/dataset/ptb2-corenlp/CoreNLP/train/" + filename + '.xml'
-	raw_text = "/home/ndg/dataset/ptb2-corenlp/masked_raw/train/" + filename
+	if int(folder) < 23: 
+		top_folder = 'train/'
+	elif int(folder) == 23:
+		top_folder = 'test/'
+	else:
+		top_folder = 'dev/'
+
+
+	parcFilePath = "/home/ndg/dataset/parc3/" + top_folder +  folder + '/' + filename + '.xml'
+	corenlpPath =  "/home/ndg/dataset/ptb2-corenlp/CoreNLP/" + top_folder + filename + '.xml'
+	raw_text = "/home/ndg/dataset/ptb2-corenlp/masked_raw/" + top_folder + '/' + filename
 
 	parc_xml = open(parcFilePath).read()
 	corenlp_xml = open(corenlpPath).read()
@@ -127,6 +137,10 @@ def featureExtract(attribution, article):
 def quoteType(content):
 	typeAttr = ''
 	words = [word['word'] for word in content]
+	print words
+	if len(words) == 0:
+		typeAttr = 'none'
+		return typeAttr
 	if words[0] in quoteMarkers and words[-1] in quoteMarkers:
 		typeAttr = 'direct'
 	elif len([word for word in words if word in quoteMarkers]) > 0:
@@ -280,91 +294,96 @@ def vectorize(dataDict):
 		features = dataDict[attr]
 
 		### SOURCE FEATURES ######
-		headers.append('sourceEntityPresence')
+		headers.append('s_1_sourceEntityPresence')
 		if features['sourceEntityPresence'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
+
+		headers = headers + [('s_1_typeEntities_' + i) for i in typeEntitiesVocab]		
+		thisVector = thisVector + createListVectors(features['typeEntities'], typeEntitiesVocab)
 		
-		headers.append('sourcePlural')
+		
+		headers.append('s_2_sourcePlural')
 		if features['sourcePlural'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
 
-		headers.append('weaselWord')
+		headers.append('s_3_weaselWord')
 		if features['weaselWordPresence'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
 
-		headers.append('amodPresence')
+		headers = headers + [('s_3_weasel_' + i) for i in weaselWordsVocab]		
+		thisVector = thisVector + createListVectors(features['weaselWords'], weaselWordsVocab)
+
+		headers.append('s_4_amodPresence')
 		if features['amodPresence'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
 
-		headers.append('pronounSource')
+		headers = headers + [('s_4_amod_' + i) for i in amodVocab]
+		thisVector = thisVector + createListVectors(features['amods'], amodVocab)
+		
+
+		headers.append('s_5_pronounSource')
 		if features['pronounPresence'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
 
-		headers.append('detSource')
+		headers.append('s_6_detSource')
 		if features['detPresence'] == True:
 			thisVector.append(1)
 		else:
 			thisVector.append(0)
 
-		headers = headers + [('dets_' + i) for i in detsVocab]
+		headers = headers + [('s_6_dets_' + i) for i in detsVocab]
 		thisVector = thisVector + createListVectors(features['dets'], detsVocab)
 		
-		headers = headers + [('amod_' + i) for i in amodVocab]
-		thisVector = thisVector + createListVectors(features['amods'], amodVocab)
-		
-		headers = headers + [('sourceLemmaVocab_' + i) for i in sourceLemmaVocab]	
+
+		headers = headers + [('s_7_sourceLemmaVocab_' + i) for i in sourceLemmaVocab]	
 		thisVector = thisVector + createListVectors(features['sourceLemma'], sourceLemmaVocab)
 		
-		headers = headers + [('typeEntities_' + i) for i in typeEntitiesVocab]		
-		thisVector = thisVector + createListVectors(features['typeEntities'], typeEntitiesVocab)
-		
-		headers = headers + [('weasel_' + i) for i in weaselWordsVocab]		
-		thisVector = thisVector + createListVectors(features['weaselWords'], weaselWordsVocab)
+	
 
-		headers = headers + [('sourceBOW_' + i) for i in sourceVocab]	
+		headers = headers + [('s_8_sourceBOW_' + i) for i in sourceVocab]	
 		thisVector = thisVector + createListVectors(features['sourceWords'], sourceVocab)
 
 		sourceFeats = len(headers)
 
 		#### CUE FEATURES ######
-		headers = headers + ['presumedVerb', 'sayVerb', 'beliefVerb', 'intendVerb']
+		headers = headers + ['q_1_presumedVerb', 'q_1_sayVerb', 'q_1_beliefVerb', 'q_1_intendVerb']
 		thisVector = thisVector + features['verbType']
 
 		
-		headers = headers + [('cueBOW_' + i) for i in cueVocab]	
+		headers = headers + [('q_2_cueBOW_' + i) for i in cueVocab]	
 		thisVector = thisVector + createListVectors(features['cueBOW'], cueVocab)
 
 		cueFeats = 4 + len(cueVocab)
 
 		##### CONTENT FEATURES ####
-		headers.append('typeQuote')
+		headers.append('c_1_typeQuote')
 		if features['quoteType'] == 'direct':
 			thisVector.append(0)
 		elif features['quoteType'] == 'mixed':
 			thisVector.append(1)
-		else:
+		elif features['quoteType'] == 'indirect':
 			thisVector.append(2)
+		else:
+			thisVector.append(3)
 		
-		headers = headers + [('contentBOW_' + i) for i in contentVocab]		
+		headers = headers + [('c_2_contentBOW_' + i) for i in contentVocab]		
 		thisVector = thisVector + createListVectors(features['contentWords'], contentVocab)
 
 		contentFeats = 1 + len(contentVocab)
 
-		print features
 		thisVector = [features['attribution']] + features['label'] + thisVector
-		print thisVector
 
-		headers = ['label'] + headers
+		headers = ['attr', 'label'] + headers
 		featVector.append(thisVector)
 
 	print headers
@@ -376,7 +395,7 @@ def vectorize(dataDict):
 
 
 
-	return featVector
+	return featVector, headers
 
 def createListVectors(thisList, compareList):
 	indices = []
@@ -391,12 +410,15 @@ def createListVectors(thisList, compareList):
 	return zeroes
 
 def execute(data):
-	'''
+	
 	attr_ids = data.keys()
 	i = 0
 	
 	
 	for attr in attr_ids:
+		#if i <= 1600:
+		#	i += 1
+		#	continue
 		attribution, article = getAttr(attr)
 		featureDict = featureExtract(attribution, article)
 		label = data[attr]
@@ -404,16 +426,56 @@ def execute(data):
 		data[attr] = featureDict
 		print featureDict
 		i += 1
+		print i
+		#if i == 1600:
+		#	break
 	
 
-	pickle.dump(data, open('data/featureDict', 'wb'))
+	pickle.dump(data, open('data/featureDict_all1', 'wb'))
+	finalData = data
 	'''
+	return
 	
-	data = pickle.load(open('data/featureDict', 'rb'))
+	
+	finalData = {}
+	data1 = pickle.load(open('data/featureDict_400', 'rb'))
+	data2 = pickle.load(open('data/featureDict_800', 'rb'))
+	data3 = pickle.load(open('data/featureDict_1200', 'rb'))
+	data4 = pickle.load(open('data/featureDict_1600', 'rb'))
+	data5 = pickle.load(open('data/featureDict_last', 'rb'))
 
-	vectors = vectorize(data)
 
-	pickle.dump(vectors, open('data/verifiabilityNumFeatures', 'wb'))
+	data1 = dict((k, v) for k, v in data1.iteritems() if 'sourcePlural' in v)
+	data2 = dict((k, v) for k, v in data2.iteritems() if 'sourcePlural' in v)
+	data3 = dict((k, v) for k, v in data3.iteritems() if 'sourcePlural' in v)
+	data4 = dict((k, v) for k, v in data4.iteritems() if 'sourcePlural' in v)
+	data5 = dict((k, v) for k, v in data5.iteritems() if 'sourcePlural' in v)
+
+
+	finalData.update(data1)
+	finalData.update(data2)
+	finalData.update(data3)
+	finalData.update(data4)
+	finalData.update(data5)
+	
+
+	print len(finalData.keys())
+
+	pickle.dump(finalData, open('data/featureDict_all1', 'wb'))
+	
+	
+	finalData = pickle.load(open('data/featureDict_all', 'rb'))
+	print len(finalData.keys())
+	'''
+
+	vectors, headers = vectorize(finalData)
+	df = pd.DataFrame(vectors, columns = headers)
+	print df
+	df = df[df.columns[df.sum()>= 5]]
+	print df
+
+
+	pickle.dump(df, open('data/verifiabilityNumFeatures_min51', 'wb'))
 
 
 
@@ -435,7 +497,7 @@ def openFile(pairwiseFile):
 
 
 def main():
-	pairwiseFile = "data/100-pairwise-scores.tsv"
+	pairwiseFile = "data/2100-scores.tsv"
 	data = openFile(pairwiseFile)
 	execute(data)
 
