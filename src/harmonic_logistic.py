@@ -126,7 +126,7 @@ def harmonic_logistic(
 	all_logistic_outputs = T.concatenate(logistic_outputs, axis=1)
 	inv = 1/all_logistic_outputs
 	summ = T.sum(inv, axis=1)
-	harmonic_output = 1/summ
+	harmonic_output = len(lengths)/summ
 
 	# We return the inputs, the parameters, the component logistic outputs, and
 	# the overall output.  The reason we return the inputs is because they may
@@ -138,7 +138,8 @@ class HarmonicLogistic(object):
 
 	def __init__(
 		self, lengths=[], input_matrix=None, target_vector=None,
-		params=None, learning_rate=1.0, load=None
+		params=None, learning_rate=1.0, load=None, clip = 0.001,
+		progress_factor_threshold=0.05
 	):
 
 		"""
@@ -151,7 +152,9 @@ class HarmonicLogistic(object):
 		self.input_matrix = input_matrix
 		self.target_vector = target_vector
 		self.params = params
-		self.learning_rate = learning_rate
+		self.learning_rate = shared(learning_rate)
+		self.clip = clip
+		self.progress_factor_threshold = progress_factor_threshold
 
 		# If a load path is given, load the params from that path
 		if load is not None:
@@ -176,20 +179,29 @@ class HarmonicLogistic(object):
 		self.loss = T.sum((self.output - self.target_vector)**2)
 
 		# Define the stochastic gradient updates
-		updates = sgd(self.loss, self.params, self.learning_rate)
+		updates = []
+		adjustments = []
+		for param in self.params:
+			gradient = T.clip(T.grad(self.loss, param), -self.clip, self.clip)
+			adjustment = -self.learning_rate * gradient
+			new_val = param + adjustment
+			updates.append((param, new_val))
+			adjustments.append(adjustment)
+
+		#updates = sgd(self.loss, self.params, self.learning_rate)
 
 		# Define the training function
 		self._train = function(
 			[self.input_matrix, self.target_vector],
-			[self.output, self.loss],
+			[self.output, self.loss] + adjustments,
 			updates=updates
 		)
 		self._predict = function([self.input_matrix], self.output)
 
 
 	def train(self, input_matrix, target_vector):
-		outputs, loss = self._train(input_matrix, target_vector)
-		return outputs, loss
+		return_vals = self._train(input_matrix, target_vector)
+		return return_vals
 
 
 	def predict(self, input_matrix):
@@ -197,12 +209,29 @@ class HarmonicLogistic(object):
 		return outputs
 
 
+	def get_param_values(self):
+		return [p.get_value() for p in self.params]
+
+
 	def fit(self, input_matrix, target_vector, tolerance=1e-8, verbose=True):
 		change_in_loss = None
 		previous_loss = None
-		while change_in_loss is None or change_in_loss > tolerance:
+		prev_params = None
 
-			outputs, loss = self.train(input_matrix, target_vector)
+		len_recall = 20
+
+		recall_adjustments = [
+			np.zeros((sum(self.lengths) + len(self.lengths)))
+		] * len_recall
+
+		i = 0
+		converged = False
+		while not converged:
+			i = (i+1) % len_recall
+
+			returns = self.train(input_matrix, target_vector)
+			outputs, loss = returns[:2]
+			adjustments = returns[2:]
 
 			change_in_loss = (
 				None if previous_loss is None else
@@ -210,12 +239,28 @@ class HarmonicLogistic(object):
 			)
 			previous_loss = loss
 
+			recall_adjustments[i] = np.concatenate(
+				adjustments, axis=1
+			)
+
+			norm_sum = np.linalg.norm(sum(recall_adjustments))
+			sum_norm = sum([np.linalg.norm(p) for p in recall_adjustments])
+			progress_factor = norm_sum / sum_norm
+			
 			if verbose:
 				print 'loss:',loss,'\t','change:',change_in_loss
+				print 'progress_factor:', progress_factor
+
+			loss_converged = not(
+				change_in_loss is None or change_in_loss > tolerance)
+			progress_converged = progress_factor < self.progress_factor_threshold
+
+			converged = loss_converged or progress_converged
+
+
 
 	def save(self, path):
-		param_values = [p.get_value() for p in self.params]
-		np.savez(path, *param_values)
+		np.savez(path, *self.get_param_values())
 
 	def _load(self, path):
 		loaded = np.load(path)

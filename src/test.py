@@ -102,10 +102,11 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			[1,2,3,4, 5,6,7]
 		])
 		expected = np.array([
-			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
-			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
-			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
+			2/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			2/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			2/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
+		print output
 		self.assertTrue(np.array_equal(output, expected))
 
 
@@ -141,9 +142,9 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			[1,2,3,4, 5,6,7]
 		])
 		expected = np.array([
-			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
-			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
-			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
+			2/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			2/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			2/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
 		self.assertTrue(np.array_equal(output, expected))
 
@@ -156,9 +157,9 @@ class TestHarmonicLogisticRegressor(TestCase):
 		regressor.params[1].set_value(np.array([[1,-1,0,1]], dtype='float64'))
 
 		expected_outputs = np.array([
-			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
-			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
-			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
+			2/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			2/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			2/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
 
 		# Define the target to be offset elementwise by 1 from what the unit
@@ -206,7 +207,7 @@ class TestHarmonicLogisticRegressor(TestCase):
 		# Build a "hidden model" that will generate the data.  We will then
 		# train a model on the generated data, and hopefully the trained model
 		# will look like the hidden model.
-		target_regressor = hl.HarmonicLogistic((4,3))
+		target_regressor = hl.HarmonicLogistic((4,3), learning_rate=0.01)
 		target_regressor.params[0].set_value(
 			np.array([[1,-1,0,1,2]], dtype='float64'))
 		target_regressor.params[1].set_value(
@@ -220,7 +221,12 @@ class TestHarmonicLogisticRegressor(TestCase):
 		regressor_to_train = hl.HarmonicLogistic((4,3), learning_rate=1)
 
 		# Now train the model
-		regressor_to_train.fit(inputs, targets, tolerance=1e-20, verbose=False)
+		regressor_to_train.fit(inputs, targets, tolerance=1e-20, verbose=True)
+
+		print target_regressor.params[0].get_value()
+		print target_regressor.params[1].get_value()
+		print regressor_to_train.params[0].get_value()
+		print regressor_to_train.params[1].get_value()
 
 		self.assertTrue(
 			np.isclose(
