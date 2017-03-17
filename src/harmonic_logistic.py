@@ -12,8 +12,8 @@ def logistic(length, input_matrix=None, init_params=None):
 	variable representing the weights (parameters).
 
 	The input matrix should be set up so that the first dimension indexes
-	individual vectors or "examples" of length `length`.  The activation of the
-	logistic unit will be calculated for each example, so the output is a
+	individual vectors or "examples" of length ``length``.  The activation of
+	the logistic unit will be calculated for each example, so the output is a
 	vector of activations.
 
 	Weights are initialized to zeros.
@@ -22,23 +22,28 @@ def logistic(length, input_matrix=None, init_params=None):
 	if input_matrix is None:
 		input_matrix = T.dmatrix()
 
-	# Define a weights vector of shared variables
+	# Define a weights vector of shared variables.  
+	#	- The first entry in the weights vector is a bias, which is added on
+	#		to value of the weights dotted with the inputs without the bias.
 	if init_params is None:
-		params = shared(np.zeros((1,length)), broadcastable=(True,False))
+		params = shared(np.zeros((1,length+1)), broadcastable=(True,False))
 
-	# But if params were supplied, use them.  Do some validation first though.
+	# But if weights were supplied, use them.  Do some validation first though.
 	else:
-		if not init_params.get_value().shape == (1,length):
-			raise ValueError(
-				'init_params should have shape ``(1, length)``, where length '
-				'is the first argument supplied to ``logistic()``.  In this '
-				'case that should be ``%s``.  Instead got ``%s``.' 
-				% ( str((1,length)), str(init_params.get_value().shape))
-			)
 		params = init_params
+		expected_shape = (1, length+1)
+		if not init_params.get_value().shape == expected_shape:
+			raise ValueError(
+				'init_params should have shape ``(1, length+1)``, where length '
+				'is the first argument supplied to ``logistic()``.  In this '
+				'case that should be ``%s`` Instead got ``%s``.' 
+				% ( str(expected_shape), str(init_params.get_value().shape))
+			)
 
 	# Create the symbolic output activation for the logistic unit
-	output_vector = sigmoid(T.dot(input_matrix, params.T))
+	bias = params[0,0]
+	dot_product = T.dot(input_matrix, params[:,1:].T)
+	output_vector = sigmoid(dot_product + bias)
 
 	# Return the output as well as the parameter vector
 	return input_matrix, params, output_vector
@@ -70,10 +75,10 @@ def harmonic_logistic(
 		``input_matrix`` should be a theano symbolic matrix variable, or None.
 		It represents a batch of feature vectors, with each row being one
 		feature vector.  If ``input_matrix`` is None, a variable will be made.
-		
+
 		``init_params`` should be a list of theano shared variables to be used
 		as the weights in each logistic unit, or None.  Therefore the ``i``th
-		shared variable should have shape ``(1, length[i])``.  If
+		shared variable should have shape ``(1, length[i]+1)``.  If
 		``init_params`` is None, then the shared variables representing the
 		parameters will be created.
 
@@ -138,8 +143,7 @@ class HarmonicLogistic(object):
 
 		"""
 		``target_vector`` should be a theano symbolic vector variable, or None.
-		It represents the "corect" value associated to every input vector, i.e.
-		we would like the harmonic logistic.
+		It represents the "corect" value associated to every input vector.
 		"""
 
 		# Register arguments to instance
@@ -220,7 +224,7 @@ class HarmonicLogistic(object):
 		for i in range(len(loaded.keys())):
 			this_array = loaded['arr_%s' % i]
 			self.params.append(shared(this_array))
-			self.lengths.append(this_array.shape[1])
+			self.lengths.append(this_array.shape[1]-1)
 
 	def load(self, path):
 		self._load(path)

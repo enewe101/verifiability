@@ -15,52 +15,56 @@ class TestLogistic(TestCase):
 	def test_basic_calculations(self):
 		input_matrix, params, output_vector = hl.logistic(1)
 		f = function([input_matrix], output_vector)
-		params.set_value(np.array([[2]], dtype='float64'))
+		params.set_value(np.array([[1,2]], dtype='float64'))
 
 		output = f([[-1], [0], [1]])
-		expected = np.array(
-			[[1/(1+np.exp(2))], [1/(1+np.exp(0))], [1/(1+np.exp(-2))]]
-		)
+		expected = np.array([
+			[1/(1+np.exp(-(-2+1)))],
+			[1/(1+np.exp(-(0+1)))], 
+			[1/(1+np.exp(-(2+1)))]
+		])
 		self.assertTrue(np.array_equal(output, expected))
 
 	def test_more_calculations(self):
 		input_matrix, params, output_vector = hl.logistic(4)
 		f = function([input_matrix], output_vector)
-		params.set_value(np.array([[-2,-1,0,1]], dtype='float64'))
+		params.set_value(np.array([[1,-2,-1,0,1]], dtype='float64'))
 
 		output = f([[-1,0,1,2], [0,1,2,3], [1,2,3,4]])
 		expected = np.array([
-			[1/(1+np.exp(-(2+0+0+2)))],
-			[1/(1+np.exp(-(0-1+0+3)))],
-			[1/(1+np.exp(-(-2-2+0+4)))]
+			[1/(1+np.exp(-(1+2+0+0+2)))],
+			[1/(1+np.exp(-(1+0-1+0+3)))],
+			[1/(1+np.exp(-(1-2-2+0+4)))]
 		])
 		self.assertTrue(np.array_equal(output, expected))
 
 	def test_supplying_inputs(self):
 		input_matrix = T.dmatrix()
-		init_params = shared(np.array([[2]], dtype='float64'))
+		init_params = shared(np.array([[1,2]], dtype='float64'))
 		_, _, output_vector = hl.logistic(1, input_matrix, init_params)
 		f = function([input_matrix], output_vector)
 
 		output = f([[-1], [0], [1]])
-		expected = np.array(
-			[[1/(1+np.exp(2))], [1/(1+np.exp(0))], [1/(1+np.exp(-2))]]
-		)
+		expected = np.array([
+			[1/(1+np.exp(-(-2+1)))],
+			[1/(1+np.exp(-(0+1)))],
+			[1/(1+np.exp(-(2+1)))]
+		])
 	
 		self.assertTrue(np.array_equal(output, expected))
 
 
 	def test_supplying_inputs_more(self):
 		input_matrix = T.dmatrix()
-		init_params = shared(np.array([[-2,-1,0,1]], dtype='float64'))
+		init_params = shared(np.array([[1,-2,-1,0,1]], dtype='float64'))
 		_, _, output_vector = hl.logistic(4, input_matrix, init_params)
 		f = function([input_matrix], output_vector)
 
 		output = f([[-1,0,1,2], [0,1,2,3], [1,2,3,4]])
 		expected = np.array([
-			[1/(1+np.exp(-(2+0+0+2)))],
-			[1/(1+np.exp(-(0-1+0+3)))],
-			[1/(1+np.exp(-(-2-2+0+4)))]
+			[1/(1+np.exp(-(1+2+0+0+2)))],
+			[1/(1+np.exp(-(1+0-1+0+3)))],
+			[1/(1+np.exp(-(1-2-2+0+4)))]
 		])
 		self.assertTrue(np.array_equal(output, expected))
 
@@ -75,11 +79,11 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			) = hl.harmonic_logistic([1])
 
 		f = function([input_matrix], output_vector)
-		logistic_weights[0].set_value(np.array([[2]], dtype='float64'))
+		logistic_weights[0].set_value(np.array([[1,2]], dtype='float64'))
 
 		output = f([[-1], [0], [1]])
 		expected = np.array(
-			[1/(1+np.exp(2)), 1/(1+np.exp(0)), 1/(1+np.exp(-2))]
+			[1/(1+np.exp(-(1-2))), 1/(1+np.exp(-(1+0))), 1/(1+np.exp(-(1+2)))]
 		)
 		self.assertTrue(np.array_equal(output, expected))
 
@@ -89,8 +93,8 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			) = hl.harmonic_logistic([4,3])
 
 		f = function([input_matrix], output_vector)
-		logistic_weights[0].set_value(np.array([[-1,0,1,2]], dtype='float64'))
-		logistic_weights[1].set_value(np.array([[-1,0,1]], dtype='float64'))
+		logistic_weights[0].set_value(np.array([[1,-1,0,1,2]], dtype='float64'))
+		logistic_weights[1].set_value(np.array([[1,-1,0,1]], dtype='float64'))
 
 		output = f([
 			[-1,0,1,2, 3,4,5], 
@@ -98,16 +102,16 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			[1,2,3,4, 5,6,7]
 		])
 		expected = np.array([
-			1/((1+np.exp(-(1 + 0 + 1 + 4)) + (1+np.exp(-(-3 + 0 + 5))))),
-			1/((1+np.exp(-(0 + 0 + 2 + 6)) + (1+np.exp(-(-4 + 0 + 6))))),
-			1/((1+np.exp(-(-1 + 0 + 3 + 8)) + (1+np.exp(-(-5 + 0 + 7)))))
+			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
 		self.assertTrue(np.array_equal(output, expected))
 
 
 	def test_supplying_inputs(self):
 		input_matrix = T.dmatrix()
-		params = [shared(np.array([[2]], dtype='float64'))]
+		params = [shared(np.array([[1,2]], dtype='float64'))]
 		_, _, logistic_outputs, output_vector = hl.harmonic_logistic(
 			[1], input_matrix, params)
 
@@ -115,7 +119,7 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 
 		output = f([[-1], [0], [1]])
 		expected = np.array(
-			[1/(1+np.exp(2)), 1/(1+np.exp(0)), 1/(1+np.exp(-2))]
+			[1/(1+np.exp(-(1-2))), 1/(1+np.exp(-(1+0))), 1/(1+np.exp(-(1+2)))]
 		)
 		self.assertTrue(np.array_equal(output, expected))
 
@@ -123,8 +127,8 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 	def test_supplying_inputs_more(self):
 		input_matrix = T.dmatrix()
 		params = [
-			shared(np.array([[-1,0,1,2]], dtype='float64')),
-			shared(np.array([[-1,0,1]], dtype='float64'))
+			shared(np.array([[1,-1,0,1,2]], dtype='float64')),
+			shared(np.array([[1,-1,0,1]], dtype='float64'))
 		]
 		_, _, logistic_outputs, output_vector = hl.harmonic_logistic(
 			[4,3], input_matrix, params)
@@ -137,9 +141,9 @@ class TestHarmonicLogisticComputationGraph(TestCase):
 			[1,2,3,4, 5,6,7]
 		])
 		expected = np.array([
-			1/((1+np.exp(-(1 + 0 + 1 + 4)) + (1+np.exp(-(-3 + 0 + 5))))),
-			1/((1+np.exp(-(0 + 0 + 2 + 6)) + (1+np.exp(-(-4 + 0 + 6))))),
-			1/((1+np.exp(-(-1 + 0 + 3 + 8)) + (1+np.exp(-(-5 + 0 + 7)))))
+			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
 		self.assertTrue(np.array_equal(output, expected))
 
@@ -148,13 +152,13 @@ class TestHarmonicLogisticRegressor(TestCase):
 
 	def test_loss_function(self):
 		regressor = hl.HarmonicLogistic((4,3))
-		regressor.params[0].set_value(np.array([[-1,0,1,2]], dtype='float64'))
-		regressor.params[1].set_value(np.array([[-1,0,1]], dtype='float64'))
+		regressor.params[0].set_value(np.array([[1,-1,0,1,2]], dtype='float64'))
+		regressor.params[1].set_value(np.array([[1,-1,0,1]], dtype='float64'))
 
 		expected_outputs = np.array([
-			1/((1+np.exp(-(1 + 0 + 1 + 4)) + (1+np.exp(-(-3 + 0 + 5))))),
-			1/((1+np.exp(-(0 + 0 + 2 + 6)) + (1+np.exp(-(-4 + 0 + 6))))),
-			1/((1+np.exp(-(-1 + 0 + 3 + 8)) + (1+np.exp(-(-5 + 0 + 7)))))
+			1/((1+np.exp(-(1+1+0+1+4)) + (1+np.exp(-(1-3+0+5))))),
+			1/((1+np.exp(-(1+0+0+2+6)) + (1+np.exp(-(1-4+0+6))))),
+			1/((1+np.exp(-(1-1+0+3+8)) + (1+np.exp(-(1-5+0+7)))))
 		])
 
 		# Define the target to be offset elementwise by 1 from what the unit
@@ -204,9 +208,9 @@ class TestHarmonicLogisticRegressor(TestCase):
 		# will look like the hidden model.
 		target_regressor = hl.HarmonicLogistic((4,3))
 		target_regressor.params[0].set_value(
-			np.array([[-1,0,1,2]], dtype='float64'))
+			np.array([[1,-1,0,1,2]], dtype='float64'))
 		target_regressor.params[1].set_value(
-			np.array([[-1,0,1]], dtype='float64'))
+			np.array([[1,-1,0,1]], dtype='float64'))
 
 		# Generate data by collecting outputs of hidden model on random inputs
 		inputs = np.random.rand(100, 4+3)
