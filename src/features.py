@@ -347,12 +347,12 @@ def vectorize(dataDict):
 
 		headers = headers + [('s_7_sourceLemmaVocab_' + i) for i in sourceLemmaVocab]	
 		thisVector = thisVector + createListVectors(features['sourceLemma'], sourceLemmaVocab)
-		
-	
+		headers.append('s_8_sourceLength')
+		lengthSource = len(features['sourceWords'])
+		thisVector.append(lengthSource)
 
 		headers = headers + [('s_8_sourceBOW_' + i) for i in sourceVocab]	
 		thisVector = thisVector + createListVectors(features['sourceWords'], sourceVocab)
-
 		sourceFeats = len(headers)
 
 		#### CUE FEATURES ######
@@ -376,10 +376,13 @@ def vectorize(dataDict):
 		else:
 			thisVector.append(3)
 		
-		headers = headers + [('c_2_contentBOW_' + i) for i in contentVocab]		
-		thisVector = thisVector + createListVectors(features['contentWords'], contentVocab)
+		#headers = headers + [('c_2_contentBOW_' + i) for i in contentVocab]		
+		#thisVector = thisVector + createListVectors(features['contentWords'], contentVocab)
+		headers.append('s_8_contentLength')
+		lengthContent = len(features['contentWords'])
+		thisVector.append(lengthContent)
 
-		contentFeats = 1 + len(contentVocab)
+		contentFeats = 1 + 1
 
 		thisVector = [features['attribution']] + features['label'] + thisVector
 
@@ -431,43 +434,13 @@ def execute(data):
 		#	break
 	
 
-	pickle.dump(data, open('data/featureDict_all1', 'wb'))
+	pickle.dump(data, open('data/featureDict_len_5', 'wb'))
 	finalData = data
-	'''
-	return
 	
 	
-	finalData = {}
-	data1 = pickle.load(open('data/featureDict_400', 'rb'))
-	data2 = pickle.load(open('data/featureDict_800', 'rb'))
-	data3 = pickle.load(open('data/featureDict_1200', 'rb'))
-	data4 = pickle.load(open('data/featureDict_1600', 'rb'))
-	data5 = pickle.load(open('data/featureDict_last', 'rb'))
-
-
-	data1 = dict((k, v) for k, v in data1.iteritems() if 'sourcePlural' in v)
-	data2 = dict((k, v) for k, v in data2.iteritems() if 'sourcePlural' in v)
-	data3 = dict((k, v) for k, v in data3.iteritems() if 'sourcePlural' in v)
-	data4 = dict((k, v) for k, v in data4.iteritems() if 'sourcePlural' in v)
-	data5 = dict((k, v) for k, v in data5.iteritems() if 'sourcePlural' in v)
-
-
-	finalData.update(data1)
-	finalData.update(data2)
-	finalData.update(data3)
-	finalData.update(data4)
-	finalData.update(data5)
 	
-
+	finalData = pickle.load(open('data/featureDict_len_5', 'rb'))
 	print len(finalData.keys())
-
-	pickle.dump(finalData, open('data/featureDict_all1', 'wb'))
-	
-	
-	finalData = pickle.load(open('data/featureDict_all', 'rb'))
-	print len(finalData.keys())
-	'''
-
 	vectors, headers = vectorize(finalData)
 	df = pd.DataFrame(vectors, columns = headers)
 	print df
@@ -475,7 +448,7 @@ def execute(data):
 	print df
 
 
-	pickle.dump(df, open('data/verifiabilityNumFeatures_min51', 'wb'))
+	pickle.dump(df, open('data/verifiabilityNumFeatures_len_5', 'wb'))
 
 
 

@@ -3,32 +3,56 @@ import matplotlib
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from tempfile import TemporaryFile
 import pandas as pd
 from sklearn import linear_model, metrics
 from sklearn import svm
-from sklearn.svm import SVC, SVR
-from sklearn.metrics import mean_squared_error, mean_absolute_error, accuracy_score, precision_score, make_scorer, classification_report
+from sklearn.svm import SVC, SVR, LinearSVC, LinearSVR
+from sklearn.metrics import mean_squared_error, mean_absolute_error, accuracy_score, precision_score, make_scorer, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score, cross_val_predict, GridSearchCV
 import pickle
 from harmonic_logistic import HarmonicLogistic
 from harmonic_logistic_sklearn import HarmonicLogisticSK
+from sklearn.model_selection import StratifiedShuffleSplit
+import copy
+
 
 
 def readData(datafile):
 	df = pickle.load(open(datafile, 'rb'))
-
-	#df = np.asarray(data)
+	df = df.rename(index=str, columns={"s_8_contentLength": "c_2_contentLength"})
 
 	headers = list(df.columns.values)
-	print len(headers)
 
 
 	metaHeaders = headers[0:2]
 	X_headers = headers[2:]
 
+	sourcecolumns = list(filter(lambda s: s.startswith('s_8') and s != 's_8_sourceLength', X_headers))
+	cuecolumns = list(filter(lambda s: s.startswith('q_2'), X_headers))
+
+
+	#print headers.index("c_2_contentBOW_'ll")
+	print headers[234]
+	#listNumsContent = list(range(234, len(headers)))
+	#listNumsSource = list(range(66, 165 + 1))
+
+	#df.drop(sourcecolumns, axis=1, inplace=True)
+	#df.drop(cuecolumns, axis=1, inplace=True)
+	headers = list(df.columns.values)
+
+	X_headers = headers[2:]
+
+
+	#df = np.asarray(data)
+
+	print len(X_headers)
+	print X_headers
+
 	numSourceFeats = len(filter(lambda s: s[0] == 's', X_headers)) 
 	numCueFeats = len(filter(lambda s: s[0] == 'q', X_headers)) 
 	numContentFeats = len(filter(lambda s: s[0] == 'c', X_headers)) 
+	#print filter(lambda s: s[0] == 's', X_headers)
 
 	numHeaders = [numSourceFeats, numCueFeats, numContentFeats]
 	print numHeaders
@@ -48,7 +72,17 @@ def readData(datafile):
 	test_meta = test_metadata[:, 0]
 	y_test = test_metadata[:, 1].astype(np.float) * 100
 
-	return X_train, X_test, y_train, y_test, train_meta, test_meta, X_headers, numHeaders
+
+	y_copy = copy.deepcopy(y_train).tolist()
+	sorted_ycopy = sorted(y_copy)
+	cutoff_values = []
+	length = len(sorted_ycopy)
+	fifths = length/5
+
+	cutoff_values = [sorted_ycopy[int(fifths)], sorted_ycopy[int(fifths) * 2], sorted_ycopy[int(fifths) * 3], sorted_ycopy[int(fifths) * 4], sorted_ycopy[length-1]]
+	print cutoff_values
+
+	return X_train, X_test, y_train, y_test, train_meta, test_meta, X_headers, numHeaders, cutoff_values
 
 def getAttr(attr):
 	filename = attr[0:8]
@@ -75,11 +109,11 @@ def getAttr(attr):
 	attribution = article.attributions[attr]
 	return attribution
 
-def bin_data(y_train, y_test):
-	bins = np.array([10,20,30,40,50,60,70,80,90,100])
+def bin_data(y_train, y_test, quintiles):
+	bins = np.array(quintiles)
 
-	binned_y_train = np.digitize(y_train, bins, right=False)
-	binned_y_test = np.digitize(y_test, bins, right=False)
+	binned_y_train = np.digitize(y_train, bins, right=True)
+	binned_y_test = np.digitize(y_test, bins, right=True)
 
 	return binned_y_train, binned_y_test
 
@@ -100,17 +134,33 @@ def lasso(X_train, y_train):
 ######################   Hyperparameter Tuning SVR    #####################	
 
 def run_svr(X_train, y_train):
+	#return SVR(C=10, kernel='linear').fit(X_train, y_train)
 
+	'''
 	tuned_parameters = [
-		{'C': [1, 10, 100, 1000, 10000], 'kernel': ['linear']},
-		{'C': [1, 10, 100, 1000, 10000], 'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'kernel': ['rbf']},
-		{'C': [1, 10, 100, 1000, 10000], 'coef0': [0, 0.5, 1, 1.5, 2],'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'degree': [2,3,4,5,6], 'kernel': ['poly']},
-		{'C': [1, 10, 100, 1000, 10000], 'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'coef0': [0, 0.5, 1, 1.5, 2],  'kernel': ['sigmoid']},
+		{'C': [0.1, 1, 10], 'kernel': ['linear']},
+		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'kernel': ['rbf']},
+		{'C': [0.1, 1, 10], 'coef0': [0,1,2],'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'degree': [2,3,4,5], 'kernel': ['poly']},
+		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'coef0': [0, 1, 2],  'kernel': ['sigmoid']},
 	]
 
-	clf = GridSearchCV(SVR(C=1), tuned_parameters, cv=5, scoring='neg_mean_squared_error', verbose=True)
 	clf.fit(X_train, y_train)
 	print(clf.best_params_)
+	'''
+
+	C_range = [0.01, 0.1, 1, 10, 100]
+	print len(C_range)
+	gamma_range = np.logspace(-6, 3, 5)
+	tuned_parameters = [
+		{'C': C_range, 'kernel': ['linear']},
+		{'C': [0.01, 0.1, 1, 10, 1000], 'gamma': [0.00001, .0001, .001, .1, 1], 'kernel': ['rbf']},
+		#{'C': [0.01, 0.1, 1, 10] ,'gamma': [0.00001,.0001, .001, .1, 1, 10], 'degree': [1,2,3,4,5], 'kernel': ['poly']},
+		{'C': C_range, 'gamma': [0.00001,.0001, .001, .1, 1], 'kernel': ['sigmoid']},
+	]
+
+	clf = GridSearchCV(SVR(C=1), tuned_parameters, cv=5, scoring='neg_mean_squared_error', verbose=100)
+	clf.fit(X_train, y_train)
+	print clf.best_params_
 	
 	print("Grid scores on development set:")
 	print
@@ -126,16 +176,36 @@ def run_svr(X_train, y_train):
 
 ######################   Hyperparameter Tuning SVC    #####################	
 def run_svc(X_train, y_train):
-
+	#return SVC(C=1.0, kernel = 'poly', coef0=2, gamma = 0.001, degree = 5, class_weight='balanced').fit(X_train, y_train)
+	'''
 	tuned_parameters = [
-		{'C': [1, 10, 100, 1000, 10000], 'kernel': ['linear']},
-		{'C': [1, 10, 100, 1000, 10000], 'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'kernel': ['rbf']},
-		{'C': [1, 10, 100, 1000, 10000], 'coef0': [0, 0.5, 1, 1.5, 2],'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'degree': [2,3,4,5,6], 'kernel': ['poly']},
-		{'C': [1, 10, 100, 1000, 10000], 'gamma': ['auto', 0.1, 0.01, 0.001, 0.0001], 'coef0': [0, 0.5, 1, 1.5, 2],  'kernel': ['sigmoid']},
+		{'C': [0.1, 1, 10], 'kernel': ['linear'], 'class_weight' = ['balanced', None]},
+		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'class_weight' = ['balanced', None], 'kernel': ['rbf']},
+		{'C': [0.1, 1, 10], 'coef0': [0,1,2],'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'degree': [2,3,4,5], 'class_weight' = ['balanced', None], 'kernel': ['poly']},
+		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'coef0': [0, 1, 2],'class_weight' = ['balanced', None],  'kernel': ['sigmoid']},
 	]
 
-	clf = GridSearchCV(SVC(C=1), tuned_parameters, cv=5, scoring='neg_mean_squared_error', verbose=True)
+	clf = GridSearchCV(SVC(C=1), tuned_parameters, cv=5, scoring='neg_mean_squared_error', verbose=100)
 	clf.fit(X_train, y_train)
+	'''
+
+	C_range = [0.01, 0.1, 1, 10, 100]
+	print len(C_range)
+	gamma_range = [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10]
+	tuned_parameters = [
+		{'C': C_range, 'kernel': ['linear']},
+		{'C': C_range, 'gamma': gamma_range, 'kernel': ['rbf']},
+		#{'C': [0.01, 0.1, 1, 10] ,'gamma': [.0001, .001, .1, 1], 'degree': [1, 2,3,4,5], 'kernel': ['poly']},
+		{'C': C_range, 'gamma': gamma_range, 'kernel': ['sigmoid']},
+	]
+
+	cv = StratifiedShuffleSplit(n_splits=5, random_state=42)
+	clf = GridSearchCV(SVC(), param_grid=tuned_parameters, cv=cv, verbose=100)
+
+	clf.fit(X_train, y_train)
+	print clf.best_params_
+
+
 	print(clf.best_params_)
 	
 	print("Grid scores on development set:")
@@ -162,94 +232,69 @@ def harm_log(X_train, y_train, headersNums):
 
 
 ######################   CREATING BINNING SCORERS : per 5   #####################	
-def myBinMeanSquaredError(real, predicted):
-	bins = np.array([5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100])
+def myBinMeanSquaredError(real, predicted, **kwargs):
+	bins_quintiles = list(kwargs.iteritems())[0][1]
+	bins = np.array(bins_quintiles)
+	print bins
 
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
+	realBin = np.digitize(real, bins, right=True)
+	predBin = np.digitize(predicted, bins, right=True)
 	return mean_squared_error(realBin, predBin)
 
-def myBinMeanAbsoluteError(real, predicted):
-	bins = np.array([5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100])
+def myBinMeanAbsoluteError(real, predicted, **kwargs):
+	bins_quintiles = list(kwargs.iteritems())[0][1]
+	bins = np.array(bins_quintiles)
 
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
+	realBin = np.digitize(real, bins, right=True)
+	predBin = np.digitize(predicted, bins, right=True)
 	return mean_absolute_error(realBin, predBin)
 
-def myBinAccuracy(real, predicted):
-	bins = np.array([5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100])
+def myBinAccuracy(real, predicted, **kwargs):
+	bins_quintiles = list(kwargs.iteritems())[0][1]
+	bins = np.array(bins_quintiles)
 
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
+	realBin = np.digitize(real, bins, right=True)
+	predBin = np.digitize(predicted, bins, right=True)
 
 	return accuracy_score(realBin, predBin)
 
+def myBinAccuracyQuintiles(real, predicted, quintiles):
+	bins = np.array(quintiles)
 
-######################   CREATING BINNING SCORERS : per 10   #####################	
-def myBinMeanSquaredErrorDecile(real, predicted):
-	bins = np.array([10,20,30,40,50,60,70,80,90,100])
-
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
-	return mean_squared_error(realBin, predBin)
-
-def myBinMeanAbsoluteErrorDecile(real, predicted):
-	bins = np.array([10,20,30,40,50,60,70,80,90,100])
-
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
-	return mean_absolute_error(realBin, predBin)
-
-def myBinAccuracyDecile(real, predicted):
-	bins = np.array([10,20,30,40,50,60,70,80,90,100])
-
-	realBin = np.digitize(real, bins, right=False)
-	predBin = np.digitize(predicted, bins, right=False)
+	realBin = np.digitize(real, bins, right=True)
+	predBin = np.digitize(predicted, bins, right=True)
 
 	return accuracy_score(realBin, predBin)
+
 
 
 ######################   QUANTITATIVE ERROR ANALYSIS    #####################	
-def errorAnal(model,X_train, y_train):
+def errorAnal(model,X_train, y_train, quintiles):
 
-	MSEscores = cross_val_score(model, X_train, y_train, cv=10, scoring='neg_mean_squared_error')
+	MSEscores = cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_squared_error')
 	print MSEscores
 	MSE = abs(np.mean(MSEscores))
 	MAE = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_absolute_error')))
 
-	print("Mean squared error: %.2f" % MSE)
-	print("Root Mean squared error: %.2f" % math.sqrt(MSE))
-	print("Mean Absolute Error: %.2f" % MAE)
+
+	print("Mean squared error: %.5f" % MSE)
+	print("Root Mean squared error: %.5f" % math.sqrt(MSE))
+	print("Mean Absolute Error: %.5f" % MAE)
 
 
-	MSE_bins_scorer = make_scorer(myBinMeanSquaredError, greater_is_better=False)
+	MSE_bins_scorer = make_scorer(myBinMeanSquaredError, greater_is_better=False, bins = quintiles)
 	MSEbinned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=MSE_bins_scorer)))
 	
-	MAE_bins_scorer = make_scorer(myBinMeanAbsoluteError, greater_is_better=False)
+	MAE_bins_scorer = make_scorer(myBinMeanAbsoluteError, greater_is_better=False, bins = quintiles)
 	MAEbinned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=MAE_bins_scorer)))
 
-	accuracy_bins_scorer = make_scorer(myBinAccuracy, greater_is_better=True)
+	accuracy_bins_scorer = make_scorer(myBinAccuracy, greater_is_better=True, bins = quintiles)
 	accuracy_binned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=accuracy_bins_scorer)))
 
-	print("Binned (5): Mean squared error: %.2f" % MSEbinned)
-	print("Binned (5): Root Mean squared error: %.2f" % math.sqrt(MSEbinned))
-	print("Binned (5): Mean Absolute Error: %.2f" % MAEbinned)
-	print("Binned (5): Accuracy: %.2f" % accuracy_binned)
-
-	MSE_decile_bins_scorer = make_scorer(myBinMeanSquaredErrorDecile, greater_is_better=False)
-	MSE_decile_binned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=MSE_decile_bins_scorer)))
-	
-	MAE_decile_bins_scorer = make_scorer(myBinMeanAbsoluteErrorDecile, greater_is_better=False)
-	MAE_decile_binned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=MAE_decile_bins_scorer)))
-
-	accuracy_decile_bins_scorer = make_scorer(myBinAccuracyDecile, greater_is_better=True)
-	accuracy_decile_binned = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring=accuracy_decile_bins_scorer)))
-
-	print("Binned (10): Mean squared error: %.2f" % MSE_decile_binned)
-	print("Binned (10): Root Mean squared error: %.2f" % math.sqrt(MSE_decile_binned))
-	print("Binned (10): Mean Absolute Error: %.2f" % MAE_decile_binned)
-	print("Binned (10): Accuracy: %.2f" % accuracy_decile_binned)
-
+	print("Binned (5): Mean squared error: %.5f" % MSEbinned)
+	print("Binned (5): Root Mean squared error: %.5f" % math.sqrt(MSEbinned))
+	print("Binned (5): Mean Absolute Error: %.5f" % MAEbinned)
+	print("Binned (5): Accuracy: %.5f" % accuracy_binned)
 	
 	model.fit(X_train, y_train)
 	predictions = model.predict(X_train)
@@ -265,23 +310,98 @@ def errorAnal(model,X_train, y_train):
 
 def binnedErrorAnalysis(model,X_train, y_train):
 	MSE = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_squared_error')))
-	MAE = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_absolute_error')))
+	print MSE
 
-	print("Mean squared error: %.2f" % MSE)
-	print("Root Mean squared error: %.2f" % math.sqrt(MSE))
-	print("Mean Absolute Error: %.2f" % MAE)
+	MAE = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_absolute_error')))
+	print MAE
+	accuracy = abs(np.mean(cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')))
+	print accuracy
+	print cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')
+
+
+	print("Mean squared error: %.5f" % MSE)
+	print("Root Mean squared error: %.5f" % math.sqrt(MSE))
+	print("Mean Absolute Error: %.5f" % MAE)
+	print("Accuracy: %.5f" % accuracy)
 
 	print
 	print "classification report on training set"
 	y_pred = cross_val_predict(model, X_train, y_train, cv=5)
 	print(classification_report(y_train, y_pred))
+	print confusion_matrix(y_train, y_pred)
 
 	predictions = model.predict(X_train)
+	print 
 	for prediction in enumerate(predictions):
 		index = prediction[0]
+		if index == 10:
+			break
 		print prediction[1], y_train[index], ((prediction[1] - y_train[index]) **2 )
 
 	return predictions
+
+def chunkList(lst, n):
+	return [ lst[i::n] for i in xrange(n) ]
+
+def hl_errorAnal(harmonic_logistic, X_train, hl_train, headerNums, quintiles):
+	#harmonic_logistic.fit(X_train, hl_train)
+	#predictions = harmonic_logistic.predict(X_train)
+	#print predictions[0:10]
+	
+
+	#X_train, X1, hl_train, y1 = train_test_split(X_train, hl_train, test_size=0.9, random_state=200)
+
+
+	X, X1, y, y1 = train_test_split(X_train, hl_train, test_size=0.2, random_state=200)
+	X, X2, y, y2 = train_test_split(X, y, test_size=0.25, random_state=200)
+	X, X3, y, y3 = train_test_split(X, y, test_size=0.33, random_state=200)
+	X5, X4, y5, y4 = train_test_split(X, y, test_size=0.5, random_state=200)
+
+	split1 = [(np.concatenate([X2,X3,X4,X5]), X1), (np.concatenate([y2,y3,y4,y5]), y1)]
+	split2 = [(np.concatenate([X1,X3,X4,X5]), X2), (np.concatenate([y1,y3,y4,y5]), y2)]
+	split3 = [(np.concatenate([X1,X2,X4,X5]), X3), (np.concatenate([y1,y2,y4,y5]), y3)]
+	split4 = [(np.concatenate([X1,X2,X3,X5]), X4), (np.concatenate([y1,y2,y3,y5]), y4)]
+	split5 = [(np.concatenate([X1,X2,X3,X4]), X5), (np.concatenate([y1,y2,y3,y4]), y5)]
+
+	splits = [split1, split2, split3, split4, split5]
+
+	resultsAccuracy = []
+	resultsMSE = []
+
+	quintiles_bins = [x / 100 for x in quintiles]
+	print quintiles_bins
+
+
+	for split in splits:
+		xtrain = split[0][0]
+		xtest = split[0][1]
+
+		ytrain = split[1][0]
+		ytest = split[1][1]
+
+		print len(xtrain), len(ytrain)
+		print len(xtest), len(ytest)
+		harmonic_logistic = HarmonicLogistic(lengths=headerNums)
+		harmonic_logistic.fit(xtrain, ytrain, verbose=False)
+		predictions = harmonic_logistic.predict(xtest)
+		#print predictions[0:10]
+		#print ytest[0:10]
+		MSE = mean_squared_error(ytest, predictions)
+		accuracy = myBinAccuracyQuintiles(ytest, predictions,  quintiles_bins)
+		MAW = mean_absolute_error(ytest, predictions)
+
+		print MSE
+		print accuracy
+		print MAW
+
+		resultsAccuracy.append(accuracy)
+		resultsMSE.append(MSE)
+
+	print resultsAccuracy
+	print resultsMSE
+	print 'average accuracy: ' + str(np.mean(resultsAccuracy))
+	print 'average MSE: ' + str(abs(np.mean(resultsMSE)))
+	print 'average root MSE: ' + str(math.sqrt(abs(np.mean(resultsMSE))))
 
 
 def ablationTesting(model, X_train, y_train, headers):
@@ -310,13 +430,26 @@ def ablationTesting(model, X_train, y_train, headers):
 		else:
 			categories.append((realIndex,indicesChange[index + 1]))
 
+	scoresWithout = []
 
 	for indx, category in enumerate(categories):
-		score = cross_val_score(model, X_train[:, category[0]:category[1]], y_train, scoring="r2", cv=5)
-		scores.append((round(np.mean(score), 3), headers[indicesChange[indx]]))
+		score = cross_val_score(model, X_train[:, category[0]:category[1]], y_train, scoring="neg_mean_squared_error", cv=5)
+		scores.append((round(math.sqrt(abs(np.mean(score))), 3), headers[indicesChange[indx]]))
+
+		xtrain2 = np.delete(X_train, np.s_[category[0]:category[1]], axis=1) 
+		print len(xtrain2[0])
+
+		scoreWO = cross_val_score(model, xtrain2, y_train, scoring="neg_mean_squared_error", cv=5)
+		scoresWithout.append((round(math.sqrt(abs(np.mean(scoreWO))), 3), headers[indicesChange[indx]]))
 	
-	sortedScores = sorted(scores, reverse=True)
+	sortedScores = sorted(scores, reverse=False)
 	score_numbers, feat_name = zip(*sortedScores)
+
+	sortedScoresWithout = sorted(scoresWithout, reverse=True)
+	print "With each feature seperately"
+	print sortedScores
+	print "With only not that feature"
+	print sortedScoresWithout
 
 def prettyprintquote(attr):
 	attrid = attr['id']
@@ -368,16 +501,37 @@ def top_bottom_quote_examples(predictions, y_test, metadata):
 def main():
 
 	print "Reading Data"
-	X_train, X_test, y_train, y_test, train_meta, test_meta, headers, headerNums = readData('data/verifiabilityNumFeatures_min5')
+	X_train, X_test, y_train, y_test, train_meta, test_meta, headers, headerNums, quintiles = readData('data/verifiabilityNumFeatures_min52')
+	
+	undertwenty = [x for x in y_train if x <= 20]
+	underforty = [x for x in y_train if x > 20 and x <= 40 ]
+	undersizty = [x for x in y_train if x > 40 and x <= 60 ]
+	undereighty = [x for x in y_train if x > 60 and x <= 80 ]
+	underhundred = [x for x in y_train if x > 80 and x <= 100 ]
+
+
+
+	print len(undertwenty)
+	print len(underforty)
+	print len(undersizty)
+	print len(undereighty)
+	print len(underhundred)
+	'''
+	np.savez('data/train.npz', x = X_train, y = y_train)
+	npzfile = np.load('data/train.npz')
+	print npzfile
+	print npzfile['x']
 	print
-	print
+	entity.ent
+	'''
+	'''
 	
 	print "----Linear Regression----"
 	linRegression = linModel(X_train, y_train)
 	print
 	print "Error Analysis"
 	print
-	predictions = errorAnal(linRegression, X_train, y_train)
+	predictions = errorAnal(linRegression, X_train, y_train, quintiles)
 	print
 	print "Quote Analysis"
 	#top_bottom_quote_examples(predictions, y_train, test_meta)
@@ -387,12 +541,12 @@ def main():
 	ablationTesting(linRegression,X_train, y_train, headers)
 	print
 	print
-
+	
 	print "----Linear Regression with Lasso Regularization----"
 	lassoModel = lasso(X_train, y_train)
 	print
 	print "Error Analysis"
-	predictions = errorAnal(lassoModel, X_train, y_train)
+	predictions = errorAnal(lassoModel, X_train, y_train, quintiles)
 	print
 	print "Quote Analysis"
 	#top_bottom_quote_examples(predictions, y_train, test_meta)
@@ -402,8 +556,10 @@ def main():
 	print
 	print
 	
-	'''
+	
+	
 	print "----Edward's Harmonic Logisical Model----"
+
 	print y_train
 	hl_train = y_train / 100
 	print hl_train
@@ -411,37 +567,19 @@ def main():
 	print
 	print "Error Analysis"
 	print hl_train
-	harmonic_logistic.fit(X_train, hl_train, verbose=False)
-	predictions = harmonic_logistic.predict(X_train)
-	print
-	print "NON SKLEARN PREDICTIONS"
-	print "  Prediction  |  Real   |  Squared Error"
-	for prediction in enumerate(predictions):
-		index = prediction[0]
-		if index == 10:
-			break
-		print prediction[1], hl_train[index], ((prediction[1] - hl_train[index]) **2 )
 
-	print
-	print "SKLEARN PREDICTIONS"
-	predictions = errorAnal(harmonic_logisticSK, X_train, hl_train)
-	print
-	print "Quote Analysis"
-	#top_bottom_quote_examples(predictions, y_train, test_meta)
-	print
-	#print "Ablation Testing"
-	#ablationTesting(harmonic_logisticSK,X_train, y_train)
-	#print
-	print
-	'''	
+	predictions = hl_errorAnal(harmonic_logistic, X_train, hl_train, headerNums, quintiles)
 	
 	
-
+	
+	
+	
 	print "----Support Vector Regression: Training + Hyper Parameter Tuning----"
 	best_svr = run_svr(X_train, y_train)
+	best_svr.fit(X_train, y_train)
 	print
 	print "Error Analysis"
-	predictions = errorAnal(best_svr, X_train, y_train)
+	predictions = errorAnal(best_svr, X_train, y_train, quintiles)
 	print
 	print "Quote Analysis"
 	#top_bottom_quote_examples(predictions, y_test, test_meta)
@@ -451,8 +589,10 @@ def main():
 	print
 	print
 	
-
-	y_train_binned, y_test_binned = bin_data(y_train, y_test)
+	'''
+	
+	
+	y_train_binned, y_test_binned = bin_data(y_train, y_test, quintiles)
 
 	print "----Multiclass Support Vector Machine: Training + Hyper Parameter Tuning----"
 	best_svc = run_svc(X_train, y_train_binned)
@@ -467,6 +607,8 @@ def main():
 	ablationTesting(best_svc,X_train, y_train_binned, headers)
 	print
 	print
+	
+	
 
 
 if __name__ == '__main__':

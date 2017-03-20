@@ -1,7 +1,29 @@
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin, clone
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split, cross_val_score, cross_val_predict, GridSearchCV
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.grid_search import GridSearchCV
+import numpy as np
+from sklearn import metrics
+
+from sklearn.datasets import make_classification
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.grid_search import GridSearchCV
+from sklearn.tree import DecisionTreeClassifier
+
 from lasagne.updates import sgd
 from theano import tensor as T, function, shared
 import numpy as np
+import pickle
+
+from lasagne.updates import sgd
+from theano import tensor as T, function, shared
+import numpy as np
+
+
 
 def logistic(length, input_matrix=None, init_params=None):
 	"""
@@ -12,8 +34,8 @@ def logistic(length, input_matrix=None, init_params=None):
 	variable representing the weights (parameters).
 
 	The input matrix should be set up so that the first dimension indexes
-	individual vectors or "examples" of length `length`.  The activation of the
-	logistic unit will be calculated for each example, so the output is a
+	individual vectors or "examples" of length ``length``.  The activation of
+	the logistic unit will be calculated for each example, so the output is a
 	vector of activations.
 
 	Weights are initialized to zeros.
@@ -22,23 +44,28 @@ def logistic(length, input_matrix=None, init_params=None):
 	if input_matrix is None:
 		input_matrix = T.dmatrix()
 
-	# Define a weights vector of shared variables
+	# Define a weights vector of shared variables.  
+	#	- The first entry in the weights vector is a bias, which is added on
+	#		to value of the weights dotted with the inputs without the bias.
 	if init_params is None:
-		params = shared(np.zeros((1,length)), broadcastable=(True,False))
+		params = shared(np.zeros((1,length+1)), broadcastable=(True,False))
 
-	# But if params were supplied, use them.  Do some validation first though.
+	# But if weights were supplied, use them.  Do some validation first though.
 	else:
-		if not init_params.get_value().shape == (1,length):
-			raise ValueError(
-				'init_params should have shape ``(1, length)``, where length '
-				'is the first argument supplied to ``logistic()``.  In this '
-				'case that should be ``%s``.  Instead got ``%s``.' 
-				% ( str((1,length)), str(init_params.get_value().shape))
-			)
 		params = init_params
+		expected_shape = (1, length+1)
+		if not init_params.get_value().shape == expected_shape:
+			raise ValueError(
+				'init_params should have shape ``(1, length+1)``, where length '
+				'is the first argument supplied to ``logistic()``.  In this '
+				'case that should be ``%s`` Instead got ``%s``.' 
+				% ( str(expected_shape), str(init_params.get_value().shape))
+			)
 
 	# Create the symbolic output activation for the logistic unit
-	output_vector = sigmoid(T.dot(input_matrix, params.T))
+	bias = params[0,0]
+	dot_product = T.dot(input_matrix, params[:,1:].T)
+	output_vector = sigmoid(dot_product + bias)
 
 	# Return the output as well as the parameter vector
 	return input_matrix, params, output_vector
@@ -70,10 +97,10 @@ def harmonic_logistic(
 		``input_matrix`` should be a theano symbolic matrix variable, or None.
 		It represents a batch of feature vectors, with each row being one
 		feature vector.  If ``input_matrix`` is None, a variable will be made.
-		
+
 		``init_params`` should be a list of theano shared variables to be used
 		as the weights in each logistic unit, or None.  Therefore the ``i``th
-		shared variable should have shape ``(1, length[i])``.  If
+		shared variable should have shape ``(1, length[i]+1)``.  If
 		``init_params`` is None, then the shared variables representing the
 		parameters will be created.
 
@@ -121,7 +148,7 @@ def harmonic_logistic(
 	all_logistic_outputs = T.concatenate(logistic_outputs, axis=1)
 	inv = 1/all_logistic_outputs
 	summ = T.sum(inv, axis=1)
-	harmonic_output = 1/summ
+	harmonic_output = len(lengths)/summ
 
 	# We return the inputs, the parameters, the component logistic outputs, and
 	# the overall output.  The reason we return the inputs is because they may
@@ -129,49 +156,82 @@ def harmonic_logistic(
 	return input_matrix, params, logistic_outputs, harmonic_output
 
 
-class HarmonicLogisticSK(BaseEstimator):
+class HarmonicLogisticSK(object):
+
 	def __init__(
-		self, lengths, input_matrix=None, target_vector=None, init_params=None,
-		learning_rate=0.1
+		self, lengths=[], input_matrix=None, target_vector=None,
+		params=None, learning_rate=1.0, load=None, clip = 0.001,
+		progress_factor_threshold=0.05
 	):
 
 		"""
 		``target_vector`` should be a theano symbolic vector variable, or None.
-		It represents the "corect" value associated to every input vector, i.e.
-		we would like the harmonic logistic.
+		It represents the "corect" value associated to every input vector.
 		"""
-		# Register params to instance
+
+		# Register arguments to instance
 		self.lengths = lengths
-		self.learning_rate = learning_rate
+		self.input_matrix = input_matrix
+		self.target_vector = target_vector
+		self.params = params
+		self.learning_rate = shared(learning_rate)
+		self.clip = clip
+		self.progress_factor_threshold = progress_factor_threshold
+
+		# If a load path is given, load the params from that path
+		if load is not None:
+			self._load(load)
+
+		# Make the architecture, then compile a training and prediction
+		# function for the architecture.
+		self._build_and_compile_model()
+
+
+	def _build_and_compile_model(self):
 
 		# Make the target vector if none was supplied
-		if target_vector is None:
+		if self.target_vector is None:
 			self.target_vector = T.dvector()
-		else:
-			self.target_vector = target_vector
 
 		# Make the computation graph.  First, make the harmonic-logistic unit.
 		self.input_matrix, self.params, self.logistic_outputs, self.output = (
-			harmonic_logistic(lengths, input_matrix, init_params))
+			harmonic_logistic(self.lengths, self.input_matrix, self.params))
 
 		# Now define the loss function as the sum of squared errors
 		self.loss = T.sum((self.output - self.target_vector)**2)
 
 		# Define the stochastic gradient updates
-		updates = sgd(self.loss, self.params, self.learning_rate)
+		updates = []
+		adjustments = []
+		for param in self.params:
+			gradient = T.clip(T.grad(self.loss, param), -self.clip, self.clip)
+			adjustment = -self.learning_rate * gradient
+			new_val = param + adjustment
+			updates.append((param, new_val))
+			adjustments.append(adjustment)
+
+		#updates = sgd(self.loss, self.params, self.learning_rate)
 
 		# Define the training function
 		self._train = function(
 			[self.input_matrix, self.target_vector],
-			[self.output, self.loss],
+			[self.output, self.loss] + adjustments,
 			updates=updates
 		)
 		self._predict = function([self.input_matrix], self.output)
 
+	def get_params(self, deep=True):
+		return {'lengths': self.lengths, 'input_matrix': self.input_matrix, 'target_vector': self.target_vector,
+			'params': self.params, 'learning_rate': self.learning_rate, 'clip': self.clip, 'progress_factor_threshold': self.progress_factor_threshold}
 
+
+	def set_params(self, **parameters):
+		for parameter, value in parameters.items():
+			setattr(self, parameter, value)
+		return self
 	def train(self, input_matrix, target_vector):
-		outputs, loss = self._train(input_matrix, target_vector)
-		return outputs, loss
+		return_vals = self._train(input_matrix, target_vector)
+		return return_vals
 
 
 	def predict(self, input_matrix):
@@ -179,12 +239,29 @@ class HarmonicLogisticSK(BaseEstimator):
 		return outputs
 
 
-	def fit(self, input_matrix, target_vector, tolerance=1e-5, verbose=False):
+	def get_param_values(self):
+		return [p.get_value() for p in self.params]
+
+
+	def fit(self, input_matrix, target_vector, tolerance=1e-8, verbose=True):
 		change_in_loss = None
 		previous_loss = None
-		while change_in_loss is None or change_in_loss > tolerance:
+		prev_params = None
 
-			outputs, loss = self.train(input_matrix, target_vector)
+		len_recall = 20
+
+		recall_adjustments = [
+			np.zeros((sum(self.lengths) + len(self.lengths)))
+		] * len_recall
+
+		i = 0
+		converged = False
+		while not converged:
+			i = (i+1) % len_recall
+
+			returns = self.train(input_matrix, target_vector)
+			outputs, loss = returns[:2]
+			adjustments = returns[2:]
 
 			change_in_loss = (
 				None if previous_loss is None else
@@ -192,5 +269,38 @@ class HarmonicLogisticSK(BaseEstimator):
 			)
 			previous_loss = loss
 
+			recall_adjustments[i] = np.concatenate(
+				adjustments, axis=1
+			)
+
+			norm_sum = np.linalg.norm(sum(recall_adjustments))
+			sum_norm = sum([np.linalg.norm(p) for p in recall_adjustments])
+			progress_factor = norm_sum / sum_norm
+			
 			if verbose:
 				print 'loss:',loss,'\t','change:',change_in_loss
+				print 'progress_factor:', progress_factor
+
+			loss_converged = not(
+				change_in_loss is None or change_in_loss > tolerance)
+			progress_converged = progress_factor < self.progress_factor_threshold
+
+			converged = loss_converged or progress_converged
+
+
+
+	def save(self, path):
+		np.savez(path, *self.get_param_values())
+
+	def _load(self, path):
+		loaded = np.load(path)
+		self.params = []
+		self.lengths = []
+		for i in range(len(loaded.keys())):
+			this_array = loaded['arr_%s' % i]
+			self.params.append(shared(this_array))
+			self.lengths.append(this_array.shape[1]-1)
+
+	def load(self, path):
+		self._load(path)
+		self._build_and_compile_model()
