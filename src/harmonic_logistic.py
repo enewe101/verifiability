@@ -49,6 +49,76 @@ def logistic(length, input_matrix=None, init_params=None):
 	return input_matrix, params, output_vector
 
 
+def radial_logistic(length, input_matrix=None, init_params=None, num_centers=16):
+	"""
+	Given a symbolic theno variable representing an input matrix, and a
+	shape parameter representing the intended dimension of the input
+	vector, this function creates a radial-logistic unit, providing a
+	symbolic theano variable representing the output activation, and it
+	returns the symbolic shared variable representing the weights
+	(parameters).
+
+	The input matrix should be set up so that the first dimension indexes
+	individual vectors or "examples" of length ``length``.  The activation
+	of the logistic unit will be calculated for each example, so the output
+	is a vector of activations.
+
+	The bias term is initialized to zero, all other weights are initialized
+	to one.
+	"""
+
+	# Create the input if it isn't provided
+	input_matrix = input_matrix
+	if input_matrix is None:
+		input_matrix = T.dmatrix()
+	else:
+		ValueError('not supported')
+
+	# Define a weights vector of shared variables.  
+	#	- The first entry in the weights vector is a bias, which is added on
+	#		to value of the weights dotted with the inputs without the bias.
+	if init_params is None:
+
+		# First make the bias term
+		bias = shared(np.random.random())
+
+		# Now make the parameters defining centers
+		params = []
+		for k in range(num_centers):
+			these_params = np.random.random((1,length)) / 100.
+			these_params = shared(these_params, broadcastable=(True,False))
+			params.append(these_params)
+
+	# But if weights were supplied, use them.  Do some validation first
+	# though.
+	else:
+		params = init_params
+		expected_shape = (1, length+1)
+		if not init_params.get_value().shape == expected_shape:
+			raise ValueError(
+				'init_params should have shape ``(1, length+1)``, where '
+				'length is the first argument supplied to ``logistic()``. '
+				'In this case that should be ``%s`` Instead got ``%s``.' 
+				% ( str(expected_shape), str(init_params.get_value().shape))
+			)
+
+	# Create the symbolic output activation for the logistic unit
+	norms = [(input_matrix - p).norm(L=2, axis=1) for p in params]
+	product = None
+	for norm in norms:
+		if product is None:
+			product = norm
+		else:
+			product = product * norm
+
+	output_vector = 1 / ( 1 + np.exp(bias) * product)
+
+	# Return the output as well as the parameter vector
+	return input_matrix, bias, params, output_vector
+
+
+
+
 def sigmoid(a):
 	"""
 	Computes the signmoid activation on input `a`.  This works whether a is a
@@ -128,10 +198,98 @@ def harmonic_logistic(
 	summ = T.sum(inv, axis=1)
 	harmonic_output = len(lengths)/summ
 
+	# For consistency with harmonic_radial_logistic, we need to return
+	# something for scalar_params.  So return empty list
+	scalar_params = []
+
 	# We return the inputs, the parameters, the component logistic outputs, and
 	# the overall output.  The reason we return the inputs is because they may
 	# have been created in this function (if they weren't passed in).
-	return input_matrix, params, logistic_outputs, harmonic_output
+	return input_matrix, scalar_params, params, logistic_outputs, harmonic_output
+
+
+
+def harmonic_radial_logistic(
+	lengths, input_matrix=None, init_params=None
+):
+	"""
+	Creates a theano computation graph as follows:
+	 - The input is split into submatrices along axis 1, such that the ``i``th
+		submatrix is a batch of rows of length equal ``lengths[i]``.
+	 - Each submatrix is then passed through its own logistic regression type
+	   calculation.  
+	 - The outputs of each logistic regression unit are then combined, by
+	   taking their harmonic mean
+
+	Inputs
+		``lengths`` determines how the input matrix is split into submatrices.
+
+		``input_matrix`` should be a theano symbolic matrix variable, or None.
+		It represents a batch of feature vectors, with each row being one
+		feature vector.  If ``input_matrix`` is None, a variable will be made.
+
+		``init_params`` should be a list of theano shared variables to be used
+		as the weights in each logistic unit, or None.  Therefore the ``i``th
+		shared variable should have shape ``(1, length[i]+1)``.  If
+		``init_params`` is None, then the shared variables representing the
+		parameters will be created.
+
+	Returns
+		``input_matrix`` the theano matrix representing the inputs to the
+		computation graph that this function builds.
+		
+		``params``	a list of theano shared variables representing the
+		parameters in the logistic units.
+
+		``logistic_outputs`` a theano matrix representing the outputs from the 
+		logistic units 
+
+		``harmonic_output`` a theano vector representing the harmonic mean of
+		the outputs from the logistic units (taken along axis 1), which
+		represents the overall output of the harmonic-logistic computation
+		graph.
+	"""
+
+	# If the inputs don't exist make them
+	if input_matrix is None:
+		input_matrix = T.dmatrix()
+
+	params_supplied = init_params is not None
+
+	# Create a logistic unit around each input vector
+	params = []
+	scalar_params = []
+	logistic_outputs = []
+	prev_endpoint = 0
+	for i, length in enumerate(lengths):
+
+		# Create a logistic unit on the specified slice of the input matrix
+		weights = init_params[i] if params_supplied else None
+		input_submatrix, bias, weights, logistic_output = radial_logistic(
+			length,
+			input_matrix[:,prev_endpoint:prev_endpoint + length],
+			weights
+		)
+		prev_endpoint += length
+
+		logistic_outputs.append(logistic_output)
+		scalar_params.append(bias)
+		params.extend(weights)
+
+	print len(params)
+	print params
+
+	# Make a symbolic variable representing the harmonic mean of these outputs
+	transposed_outputs = [o.dimshuffle((0,'x')) for o in logistic_outputs]
+	all_logistic_outputs = T.concatenate(transposed_outputs, axis=1)
+	inv = 1/all_logistic_outputs
+	summ = T.sum(inv, axis=1)
+	harmonic_output = len(lengths)/summ
+
+	# We return the inputs, the parameters, the component logistic outputs, and
+	# the overall output.  The reason we return the inputs is because they may
+	# have been created in this function (if they weren't passed in).
+	return input_matrix, scalar_params, params, logistic_outputs, harmonic_output
 
 
 class HarmonicLogistic(object):
@@ -139,7 +297,7 @@ class HarmonicLogistic(object):
 	def __init__(
 		self, lengths=[], input_matrix=None, target_vector=None,
 		params=None, learning_rate=1.0, load=None, clip = 0.001,
-		progress_factor_threshold=0.05
+		progress_tolerance=0.05, loss_tolerance=1e-20
 	):
 
 		"""
@@ -154,7 +312,8 @@ class HarmonicLogistic(object):
 		self.params = params
 		self.learning_rate = shared(learning_rate)
 		self.clip = clip
-		self.progress_factor_threshold = progress_factor_threshold
+		self.progress_tolerance = progress_tolerance
+		self.loss_tolerance = loss_tolerance
 
 		# If a load path is given, load the params from that path
 		if load is not None:
@@ -172,8 +331,12 @@ class HarmonicLogistic(object):
 			self.target_vector = T.dvector()
 
 		# Make the computation graph.  First, make the harmonic-logistic unit.
-		self.input_matrix, self.params, self.logistic_outputs, self.output = (
-			harmonic_logistic(self.lengths, self.input_matrix, self.params))
+		(
+			self.input_matrix, self.scalar_params, self.params,
+			self.logistic_outputs, self.output 
+		) = (
+			self.get_architecture()
+		)
 
 		# Now define the loss function as the sum of squared errors
 		self.loss = T.sum((self.output - self.target_vector)**2)
@@ -187,6 +350,13 @@ class HarmonicLogistic(object):
 			new_val = param + adjustment
 			updates.append((param, new_val))
 			adjustments.append(adjustment)
+
+		for sparam in self.scalar_params:
+			gradient = T.clip(T.grad(self.loss, sparam), -self.clip, self.clip)
+			adjustment = -self.learning_rate * gradient
+			new_val = sparam + adjustment
+			updates.append((sparam, new_val))
+			#adjustments.append(adjustment)
 
 		#updates = sgd(self.loss, self.params, self.learning_rate)
 
@@ -213,16 +383,19 @@ class HarmonicLogistic(object):
 		return [p.get_value() for p in self.params]
 
 
-	def fit(self, input_matrix, target_vector, tolerance=1e-8, verbose=True):
+	def fit(self, input_matrix, target_vector, verbose=True):
 		change_in_loss = None
 		previous_loss = None
 		prev_params = None
 
 		len_recall = 20
 
-		recall_adjustments = [
-			np.zeros((sum(self.lengths) + len(self.lengths)))
-		] * len_recall
+		#recall_adjustments = [
+		#	np.zeros((sum(self.lengths) + len(self.lengths)))
+		#] * len_recall
+		
+
+		recall_adjustments = []
 
 		i = 0
 		converged = False
@@ -233,15 +406,22 @@ class HarmonicLogistic(object):
 			outputs, loss = returns[:2]
 			adjustments = returns[2:]
 
+			concat_adjustments = np.concatenate(
+				adjustments, axis=1
+			)
+
+
 			change_in_loss = (
 				None if previous_loss is None else
 				abs(previous_loss - loss)
 			)
 			previous_loss = loss
 
-			recall_adjustments[i] = np.concatenate(
-				adjustments, axis=1
-			)
+
+			if len(recall_adjustments) < len_recall:
+				recall_adjustments.append(concat_adjustments)
+			else:
+				recall_adjustments[i] = concat_adjustments
 
 			norm_sum = np.linalg.norm(sum(recall_adjustments))
 			sum_norm = sum([np.linalg.norm(p) for p in recall_adjustments])
@@ -252,13 +432,28 @@ class HarmonicLogistic(object):
 				print 'progress_factor:', progress_factor
 
 			loss_converged = not(
-				change_in_loss is None or change_in_loss > tolerance)
-			progress_converged = progress_factor < self.progress_factor_threshold
+				change_in_loss is None or change_in_loss > self.loss_tolerance)
+			progress_converged = (
+				self.progress_tolerance is not None 
+				and progress_factor < self.progress_tolerance
+			)
 
-			converged = loss_converged or progress_converged
+			# Check if convergence has occured.  Print reason for convergence.
+			if progress_converged:
+				if verbose:
+					print 'converged in progress tolerance: %f' % progress_factor
+				converged = True
+			elif loss_converged:
+				if verbose:
+					print 'converged in loss tolerannce: %f' % change_in_loss
+				converged = True
+
+			#converged = loss_converged or progress_converged
 
 
-
+	def get_architecture(self):
+		return harmonic_logistic(self.lengths, self.input_matrix, self.params)
+			
 	def save(self, path):
 		np.savez(path, *self.get_param_values())
 
@@ -276,9 +471,20 @@ class HarmonicLogistic(object):
 		self._build_and_compile_model()
 
 
+class Logistic(HarmonicLogistic):
+
+	def get_architecture(self):
+		input_matrix, params, output_vector = logistic(
+			sum(self.lengths), self.input_matrix, self.params)
+
+		scalar_params = []
+		return (
+			input_matrix, scalar_params, [params], [output_vector], output_vector
+		)
 
 
 
-
-
-
+class HarmonicRadialLogistic(HarmonicLogistic):
+	def get_architecture(self):
+		return harmonic_radial_logistic(
+			self.lengths, self.input_matrix, self.params)

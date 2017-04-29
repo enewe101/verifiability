@@ -1,6 +1,6 @@
 from parc_reader import ParcCorenlpReader as P
-import matplotlib
 import math
+from sklearn.externals import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 from tempfile import TemporaryFile
@@ -14,11 +14,15 @@ import pickle
 from harmonic_logistic import HarmonicLogistic
 from harmonic_logistic_sklearn import HarmonicLogisticSK
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.naive_bayes import GaussianNB
+from sklearn import linear_model
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import KFold
 import copy
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import AdaBoostRegressor
 
-
-
-def readData(datafile):
+def readTrain(datafile):
 	df = pickle.load(open(datafile, 'rb'))
 	df = df.rename(index=str, columns={"s_8_contentLength": "c_2_contentLength"})
 
@@ -30,14 +34,12 @@ def readData(datafile):
 
 	sourcecolumns = list(filter(lambda s: s.startswith('s_8') and s != 's_8_sourceLength', X_headers))
 	cuecolumns = list(filter(lambda s: s.startswith('q_2'), X_headers))
+	dropColumns = list(filter(lambda s: s.startswith('c_3') or s.startswith('s_10'), X_headers))
 
 
-	#print headers.index("c_2_contentBOW_'ll")
-	print headers[234]
-	#listNumsContent = list(range(234, len(headers)))
-	#listNumsSource = list(range(66, 165 + 1))
+	df.drop(sourcecolumns, axis=1, inplace=True)
+	df.drop(dropColumns, axis=1, inplace=True)
 
-	#df.drop(sourcecolumns, axis=1, inplace=True)
 	#df.drop(cuecolumns, axis=1, inplace=True)
 	headers = list(df.columns.values)
 
@@ -64,13 +66,17 @@ def readData(datafile):
 	metaData = metaData.as_matrix()
 	X_Values = X_Values.as_matrix()
 
-	X_train, X_test, train_metadata, test_metadata = train_test_split(X_Values, metaData, test_size=0.2, random_state=200)
+	#X_train, X_test, train_metadata, test_metadata = train_test_split(X_Values, metaData, test_size=0.2, random_state=200)
 
-	train_meta = train_metadata[:, 0]
-	y_train = train_metadata[:, 1].astype(np.float) * 100
+	#train_meta = train_metadata[:, 0]
+	#y_train = train_metadata[:, 1].astype(np.float) * 100
 
-	test_meta = test_metadata[:, 0]
-	y_test = test_metadata[:, 1].astype(np.float) * 100
+	#test_meta = test_metadata[:, 0]
+	#y_test = test_metadata[:, 1].astype(np.float) * 100
+
+	train_meta = metaData[:, 0]
+	y_train = metaData[:, 1].astype(np.float) * 100
+	X_train = X_Values
 
 
 	y_copy = copy.deepcopy(y_train).tolist()
@@ -82,7 +88,44 @@ def readData(datafile):
 	cutoff_values = [sorted_ycopy[int(fifths)], sorted_ycopy[int(fifths) * 2], sorted_ycopy[int(fifths) * 3], sorted_ycopy[int(fifths) * 4], sorted_ycopy[length-1]]
 	print cutoff_values
 
-	return X_train, X_test, y_train, y_test, train_meta, test_meta, X_headers, numHeaders, cutoff_values
+	return X_train, y_train, train_meta,  X_headers, numHeaders, cutoff_values
+
+def readTest(datafile):
+	df = pickle.load(open(datafile, 'rb'))
+	headers = list(df.columns.values)
+
+
+	metaHeaders = headers[0:2]
+	X_headers = headers[2:]
+
+	sourcecolumns = list(filter(lambda s: s.startswith('s_8') and s != 's_8_sourceLength', X_headers))
+	cuecolumns = list(filter(lambda s: s.startswith('q_2'), X_headers))
+	dropColumns = list(filter(lambda s: s.startswith('c_3') or s.startswith('s_10'), X_headers))
+
+	df.drop(sourcecolumns, axis=1, inplace=True)
+	df.drop(dropColumns, axis=1, inplace=True)
+
+	headers = list(df.columns.values)
+
+	X_headers = headers[2:]
+
+
+	print len(X_headers)
+	print X_headers
+
+	metaData = df[metaHeaders]
+	X_Values = df[X_headers].astype(np.float)
+
+	metaData = metaData.as_matrix()
+	X_Values = X_Values.as_matrix()
+
+	test_meta = metaData[:, 0]
+	y_test = metaData[:, 1].astype(np.float) * 100
+	X_test = X_Values
+	
+	return X_test, y_test, test_meta, headers
+
+
 
 def getAttr(attr):
 	filename = attr[0:8]
@@ -127,34 +170,23 @@ def linModel(X_train, y_train):
 ######################   Lasso Regularization    #####################	
 
 def lasso(X_train, y_train):
-	lasso = linear_model.LassoCV(cv = 5)
+	lasso = linear_model.Lasso()
 	#lasso.fit(X_train, y_train)
 	return lasso
 
 ######################   Hyperparameter Tuning SVR    #####################	
 
 def run_svr(X_train, y_train):
-	#return SVR(C=10, kernel='linear').fit(X_train, y_train)
+	return SVR(kernel= 'rbf', C= 1000, gamma = 0.001)
 
-	'''
-	tuned_parameters = [
-		{'C': [0.1, 1, 10], 'kernel': ['linear']},
-		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'kernel': ['rbf']},
-		{'C': [0.1, 1, 10], 'coef0': [0,1,2],'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'degree': [2,3,4,5], 'kernel': ['poly']},
-		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'coef0': [0, 1, 2],  'kernel': ['sigmoid']},
-	]
 
-	clf.fit(X_train, y_train)
-	print(clf.best_params_)
-	'''
-
-	C_range = [0.01, 0.1, 1, 10, 100]
+	C_range = [0.01, 0.1, 1, 10]
 	print len(C_range)
 	gamma_range = np.logspace(-6, 3, 5)
 	tuned_parameters = [
 		{'C': C_range, 'kernel': ['linear']},
-		{'C': [0.01, 0.1, 1, 10, 1000], 'gamma': [0.00001, .0001, .001, .1, 1], 'kernel': ['rbf']},
-		#{'C': [0.01, 0.1, 1, 10] ,'gamma': [0.00001,.0001, .001, .1, 1, 10], 'degree': [1,2,3,4,5], 'kernel': ['poly']},
+		{'C': [0.01, 0.1, 1, 10, 1000, 10000], 'gamma': [0.00001, .0001, .001, .1, 1], 'kernel': ['rbf']},
+		#{'C': [0.01, 0.1, 1, 10] ,'gamma': [0.00001,.0001, .001, .1, 1], 'degree': [1,2,3,4,5], 'kernel': ['poly']},
 		{'C': C_range, 'gamma': [0.00001,.0001, .001, .1, 1], 'kernel': ['sigmoid']},
 	]
 
@@ -176,20 +208,12 @@ def run_svr(X_train, y_train):
 
 ######################   Hyperparameter Tuning SVC    #####################	
 def run_svc(X_train, y_train):
-	#return SVC(C=1.0, kernel = 'poly', coef0=2, gamma = 0.001, degree = 5, class_weight='balanced').fit(X_train, y_train)
-	'''
-	tuned_parameters = [
-		{'C': [0.1, 1, 10], 'kernel': ['linear'], 'class_weight' = ['balanced', None]},
-		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'class_weight' = ['balanced', None], 'kernel': ['rbf']},
-		{'C': [0.1, 1, 10], 'coef0': [0,1,2],'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'degree': [2,3,4,5], 'class_weight' = ['balanced', None], 'kernel': ['poly']},
-		{'C': [0.1, 1, 10], 'gamma': ['auto', 1, 0.1, 0.01, 0.001], 'coef0': [0, 1, 2],'class_weight' = ['balanced', None],  'kernel': ['sigmoid']},
-	]
+	return SVC(kernel= 'rbf', C= 10, gamma = 0.01).fit(X_train, y_train)
+	
 
-	clf = GridSearchCV(SVC(C=1), tuned_parameters, cv=5, scoring='neg_mean_squared_error', verbose=100)
-	clf.fit(X_train, y_train)
-	'''
+	#return SVC(kernel = 'linear', C = 0.1).fit(X_train, y_train)
 
-	C_range = [0.01, 0.1, 1, 10, 100]
+	C_range = [0.01, 0.1, 1, 10, 100, 1000]
 	print len(C_range)
 	gamma_range = [0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10]
 	tuned_parameters = [
@@ -403,13 +427,74 @@ def hl_errorAnal(harmonic_logistic, X_train, hl_train, headerNums, quintiles):
 	print 'average MSE: ' + str(abs(np.mean(resultsMSE)))
 	print 'average root MSE: ' + str(math.sqrt(abs(np.mean(resultsMSE))))
 
+def final_test(model, X_train, y_train, X_test, y_test, quintiles):
+
+	model.fit(X_train, y_train)
+	predictions = model.predict(X_test)
+
+	print "MSE ON FINAL TEST"
+	print mean_squared_error(y_test, predictions)
+
+	print "MAE ON FINAL TEST"
+	print mean_absolute_error(y_test, predictions)
+
+	print "ACCURACY BINS"
+	print myBinAccuracy(y_test, predictions, bins = quintiles)
+
+
+
 
 def ablationTesting(model, X_train, y_train, headers):
 	scores = []
-	lastFeat = headers[0][0:3]
-	currentFeat = headers[0][0:3]
-	allFeats = [feature[0:3] for feature in headers]
-	allFeatsSet = set([feature[0:3] for feature in headers])
+
+
+	sqcFeats = [feature[0:1] for feature in headers]
+	sqcFeatsSet = set([feature[0:1] for feature in headers])
+	sqcfeatNames = sorted(list(sqcFeatsSet))
+	sqcIndicesChange = []
+
+	for elem in sqcfeatNames:
+		sqcIndicesChange.append(sqcFeats.index(elem))
+
+	sqcIndicesChange = sorted(sqcIndicesChange)
+
+	sqcCategories = []
+	for index, realIndex in enumerate(sqcIndicesChange):
+		if index == 0:
+			sqcCategories.append((0,sqcIndicesChange[1]))
+		elif index == len(sqcIndicesChange) - 1:
+			sqcCategories.append((realIndex, len(headers)))
+		else:
+			sqcCategories.append((realIndex,sqcIndicesChange[index + 1]))
+
+	sqcScoresWithout = []
+	sqcScores = []
+	
+	for indx, category in enumerate(sqcCategories):
+		score = cross_val_score(model, X_train[:, category[0]:category[1]], y_train, scoring="neg_mean_squared_error", cv=5)
+		sqcScores.append((round(math.sqrt(abs(np.mean(score))), 3), headers[sqcIndicesChange[indx]]))
+
+		xtrain2 = np.delete(X_train, np.s_[category[0]:category[1]], axis=1) 
+		print len(xtrain2[0])
+
+		scoreWO = cross_val_score(model, xtrain2, y_train, scoring="neg_mean_squared_error", cv=5)
+		sqcScoresWithout.append((round(math.sqrt(abs(np.mean(scoreWO))), 3), headers[sqcIndicesChange[indx]]))
+	
+	sqcSortedScores = sorted(sqcScores, reverse=False)
+	sqc_sortedScoresWithout = sorted(sqcScoresWithout, reverse=True)
+	print "With each feature seperately: ablated on source/cue/content"
+	print sqcSortedScores
+	print "With only not that feature: ablated on source/cue/content"
+	print sqc_sortedScoresWithout
+
+
+
+
+
+
+
+	allFeats = [feature[0:4] for feature in headers]
+	allFeatsSet = set([feature[0:4] for feature in headers])
 
 	featNames = sorted(list(allFeatsSet))
 
@@ -501,8 +586,20 @@ def top_bottom_quote_examples(predictions, y_test, metadata):
 def main():
 
 	print "Reading Data"
-	X_train, X_test, y_train, y_test, train_meta, test_meta, headers, headerNums, quintiles = readData('data/verifiabilityNumFeatures_min52')
-	
+	X_train, y_train, train_meta, headers, headerNums, quintiles = readTrain('data/verifiabilityNumFeatures_len_5_liwc_train_20comp')
+	X_test, y_test, test_meta, headers2 = readTest('data/verifiabilityNumFeatures_len_5_liwc_test_20comp')
+	print X_train
+
+
+	print list(set(headers) - set(headers2))
+
+	print len(X_train[0])
+	print len(X_test[0])
+
+	all_X = np.concatenate((X_train, X_test), axis=0)
+	all_y = np.concatenate((y_train, y_test), axis=0)
+
+
 	undertwenty = [x for x in y_train if x <= 20]
 	underforty = [x for x in y_train if x > 20 and x <= 40 ]
 	undersizty = [x for x in y_train if x > 40 and x <= 60 ]
@@ -524,7 +621,7 @@ def main():
 	print
 	entity.ent
 	'''
-	'''
+	#try NN?
 	
 	print "----Linear Regression----"
 	linRegression = linModel(X_train, y_train)
@@ -577,6 +674,7 @@ def main():
 	print "----Support Vector Regression: Training + Hyper Parameter Tuning----"
 	best_svr = run_svr(X_train, y_train)
 	best_svr.fit(X_train, y_train)
+
 	print
 	print "Error Analysis"
 	predictions = errorAnal(best_svr, X_train, y_train, quintiles)
@@ -589,7 +687,17 @@ def main():
 	print
 	print
 	
-	'''
+	final_test(best_svr, X_train, y_train, X_test, y_test, quintiles)
+
+	print 'retraining on all data'
+
+	new_svr = run_svr(all_X, all_y)
+	new_svr.fit(all_X, all_y)
+
+	errorAnal(new_svr, all_X, all_y, quintiles)
+	joblib.dump(new_svr, 'best_ver_regressionSVR(20).pkl')
+
+	
 	
 	
 	y_train_binned, y_test_binned = bin_data(y_train, y_test, quintiles)
@@ -608,7 +716,11 @@ def main():
 	print
 	print
 	
+
+	y_train_binned, y_test_binned = bin_data(y_train, y_test, quintiles)
+
 	
+
 
 
 if __name__ == '__main__':
